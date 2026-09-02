@@ -8,7 +8,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launchArguments = ["-ui-testing"]
         app.launch()
 
-        let wizardTab = app.tabBars.buttons["Resume Wizard"]
+        let wizardTab = app.buttons["Resume Wizard"].firstMatch
         XCTAssertTrue(wizardTab.waitForExistence(timeout: timeout))
         XCTAssertTrue(wizardTab.isHittable)
         wizardTab.tap()
@@ -19,13 +19,13 @@ final class ResumeWizardUITests: XCTestCase {
         let next = app.buttons["wizard.next"]
         XCTAssertTrue(next.waitForExistence(timeout: timeout))
         XCTAssertFalse(next.isEnabled)
-        let fullName = app.textFields["Full name"]
+        let fullName = app.textFields["wizard.full-name"]
         XCTAssertTrue(fullName.waitForExistence(timeout: timeout))
         XCTAssertTrue(fullName.isHittable)
         fullName.tap()
         fullName.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64))
         fullName.typeText("Test User")
-        let email = app.textFields["Email"]
+        let email = app.textFields["wizard.email"]
         XCTAssertTrue(email.waitForExistence(timeout: timeout))
         XCTAssertTrue(email.isHittable)
         email.tap()

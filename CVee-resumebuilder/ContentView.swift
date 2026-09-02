@@ -866,8 +866,8 @@ struct NewResumeView: View {
             Section { Picker("Start method", selection: $startMode) { ForEach(ResumeStartMode.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented) }
             if startMode == .fresh {
                 Section("Your identity") {
-                    TextField("Full name", text: $draftName).textContentType(.name)
-                    TextField("Email", text: $draftEmail).textContentType(.emailAddress).keyboardType(.emailAddress)
+                    TextField("Full name", text: $draftName).textContentType(.name).accessibilityIdentifier("wizard.full-name")
+                    TextField("Email", text: $draftEmail).textContentType(.emailAddress).keyboardType(.emailAddress).accessibilityIdentifier("wizard.email")
                     TextField("Phone", text: $draftPhone).textContentType(.telephoneNumber).keyboardType(.phonePad)
                     TextField("Location", text: $draftLocation)
                     TextField("LinkedIn URL", text: $draftLinkedIn).textInputAutocapitalization(.never).keyboardType(.URL)
