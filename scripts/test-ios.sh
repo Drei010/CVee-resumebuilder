@@ -3,11 +3,10 @@ set -euo pipefail
 
 PROJECT="CVee-resumebuilder.xcodeproj"
 SCHEME="CVee-resumebuilder"
-IOS_RUNTIME="${IOS_RUNTIME:-iOS-26-0}"
-DEVICE_ID="${IOS_SIMULATOR_ID:-$(xcrun simctl list devices available --json | jq -r --arg runtime "$IOS_RUNTIME" '.devices | to_entries[] | select(.key | contains($runtime)) | .value[] | select(.name | startswith("iPhone")) | .udid' | head -n 1)}"
+DEVICE_ID="${IOS_SIMULATOR_ID:-$(xcrun simctl list devices available --json | jq -r '.devices[][] | select(.name | startswith("iPhone")) | .udid' | head -n 1)}"
 
 if [[ -z "$DEVICE_ID" ]]; then
-  echo "No available iPhone Simulator for runtime $IOS_RUNTIME found." >&2
+  echo "No available iPhone Simulator found." >&2
   xcrun simctl list runtimes >&2
   xcrun simctl list devices available >&2
   exit 1
