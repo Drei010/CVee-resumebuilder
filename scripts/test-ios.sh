@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT="CVee-resumebuilder.xcodeproj"
 SCHEME="CVee-resumebuilder"
-IOS_RUNTIME="${IOS_RUNTIME:-iOS-26-5}"
+IOS_RUNTIME="${IOS_RUNTIME:-iOS-26-0}"
 DEVICE_ID="${IOS_SIMULATOR_ID:-$(xcrun simctl list devices available --json | jq -r --arg runtime "$IOS_RUNTIME" '.devices | to_entries[] | select(.key | contains($runtime)) | .value[] | select(.name | startswith("iPhone")) | .udid' | head -n 1)}"
 
 if [[ -z "$DEVICE_ID" ]]; then
