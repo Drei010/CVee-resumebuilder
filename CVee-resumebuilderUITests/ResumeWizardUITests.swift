@@ -7,8 +7,8 @@ final class ResumeWizardUITests: XCTestCase {
         app.launch()
 
         app.tabBars.buttons["Resume Wizard"].tap()
-        XCTAssertTrue(app.otherElements["wizard.progress"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.otherElements["wizard.start"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.progress"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.start"].exists)
 
         let next = app.buttons["wizard.next"]
         XCTAssertFalse(next.isEnabled)
@@ -18,8 +18,8 @@ final class ResumeWizardUITests: XCTestCase {
         app.textFields["Email"].typeText("test@example.com")
         XCTAssertTrue(next.isEnabled)
         next.tap()
-        XCTAssertTrue(app.otherElements["wizard.work-library"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.work-library"].waitForExistence(timeout: 2))
         app.buttons["wizard.back"].tap()
-        XCTAssertTrue(app.otherElements["wizard.start"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.start"].exists)
     }
 }
