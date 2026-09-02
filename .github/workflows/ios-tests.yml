@@ -11,6 +11,10 @@ jobs:
   test:
     runs-on: macos-26
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        device-family: [iPhone, iPad]
 
     steps:
       - name: Check out repository
@@ -28,10 +32,13 @@ jobs:
         run: swiftlint lint --config .swiftlint.yml --strict
 
       - name: Run XCUITest suite
+        env:
+          IOS_DEVICE_FAMILY: ${{ matrix.device-family }}
+          CI_DIAGNOSTICS_DIR: ci-diagnostics/${{ matrix.device-family }}
         run: ./scripts/test-ios.sh
 
       - name: Collect iOS test diagnostics
-        if: failure()
+        if: always()
         run: |
           mkdir -p ci-diagnostics
           xcodebuild -version > ci-diagnostics/xcode-version.txt
@@ -43,8 +50,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-test-results
+          name: ios-test-results-${{ matrix.device-family }}
           path: |
-            TestResults.xcresult
+            TestResults-*.xcresult
             ci-diagnostics
+            .derivedData/Logs/Test
           if-no-files-found: warn

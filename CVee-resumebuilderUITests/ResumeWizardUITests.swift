@@ -1,25 +1,43 @@
 import XCTest
 
 final class ResumeWizardUITests: XCTestCase {
+    private let timeout: TimeInterval = 10
+
     func testWizardProgressAndBackNavigation() {
         let app = XCUIApplication()
-        app.launchArguments.append("-ui-testing")
+        app.launchArguments = ["-ui-testing"]
         app.launch()
 
-        app.tabBars.buttons["Resume Wizard"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["wizard.progress"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.descendants(matching: .any)["wizard.start"].exists)
+        let wizardTab = app.tabBars.buttons["Resume Wizard"]
+        XCTAssertTrue(wizardTab.waitForExistence(timeout: timeout))
+        XCTAssertTrue(wizardTab.isHittable)
+        wizardTab.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.progress"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.start"].waitForExistence(timeout: timeout))
 
         let next = app.buttons["wizard.next"]
+        XCTAssertTrue(next.waitForExistence(timeout: timeout))
         XCTAssertFalse(next.isEnabled)
-        app.textFields["Full name"].tap()
-        app.textFields["Full name"].typeText("Test User")
-        app.textFields["Email"].tap()
-        app.textFields["Email"].typeText("test@example.com")
-        XCTAssertTrue(next.isEnabled)
+        let fullName = app.textFields["Full name"]
+        XCTAssertTrue(fullName.waitForExistence(timeout: timeout))
+        XCTAssertTrue(fullName.isHittable)
+        fullName.tap()
+        fullName.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64))
+        fullName.typeText("Test User")
+        let email = app.textFields["Email"]
+        XCTAssertTrue(email.waitForExistence(timeout: timeout))
+        XCTAssertTrue(email.isHittable)
+        email.tap()
+        email.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64))
+        email.typeText("test@example.com")
+        let enabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: next)
+        wait(for: [enabled], timeout: timeout)
         next.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["wizard.work-library"].waitForExistence(timeout: 2))
-        app.buttons["wizard.back"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["wizard.start"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.work-library"].waitForExistence(timeout: timeout))
+        let back = app.buttons["wizard.back"]
+        XCTAssertTrue(back.waitForExistence(timeout: timeout))
+        back.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.start"].waitForExistence(timeout: timeout))
     }
 }

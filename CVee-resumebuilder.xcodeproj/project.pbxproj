@@ -11,6 +11,16 @@
 		F10000000000000000000006 /* CVee-resumebuilderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "CVee-resumebuilderUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXContainerItemProxy section */
+		F1000000000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 68179DEE3010721600B4AB71 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 68179DF53010721600B4AB71;
+			remoteInfo = "CVee-resumebuilder";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		68179DF83010721600B4AB71 /* CVee-resumebuilder */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -98,7 +108,9 @@
 				F10000000000000000000005 /* Resources */,
 			);
 			buildRules = ();
-			dependencies = ();
+			dependencies = (
+				F1000000000000000000000B /* PBXTargetDependency */,
+			);
 			fileSystemSynchronizedGroups = (F10000000000000000000001 /* CVee-resumebuilderUITests */);
 			name = CVee-resumebuilderUITests;
 			productName = CVee-resumebuilderUITests;
@@ -117,6 +129,10 @@
 				TargetAttributes = {
 					68179DF53010721600B4AB71 = {
 						CreatedOnToolsVersion = 26.6;
+					};
+					F10000000000000000000002 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = 68179DF53010721600B4AB71;
 					};
 				};
 			};
@@ -149,6 +165,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F1000000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 68179DF53010721600B4AB71 /* CVee-resumebuilder */;
+			targetProxy = F1000000000000000000000A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXSourcesBuildPhase section */
 		68179DF23010721600B4AB71 /* Sources */ = {
@@ -342,8 +366,8 @@
 			};
 			name = Release;
 		};
-		F10000000000000000000008 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = "com.drei010.CVee-resumebuilderUITests"; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CVee-resumebuilder.app/CVee-resumebuilder"; }; name = Debug; };
-		F10000000000000000000009 /* Release */ = { isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = "com.drei010.CVee-resumebuilderUITests"; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CVee-resumebuilder.app/CVee-resumebuilder"; }; name = Release; };
+		F10000000000000000000008 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = "com.drei010.CVee-resumebuilderUITests"; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = "CVee-resumebuilder"; }; name = Debug; };
+		F10000000000000000000009 /* Release */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = "com.drei010.CVee-resumebuilderUITests"; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = "CVee-resumebuilder"; }; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
