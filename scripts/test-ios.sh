@@ -3,26 +3,24 @@ set -euo pipefail
 
 PROJECT="CVee-resumebuilder.xcodeproj"
 SCHEME="CVee-resumebuilder"
-DEVICE_ID="${IOS_SIMULATOR_ID:-$(xcrun simctl list devices available --json | jq -r '.devices[][] | select(.name | startswith("iPhone")) | .udid' | head -n 1)}"
+DESTINATION="${IOS_SIMULATOR_DESTINATION:-$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations 2>/dev/null | awk '/platform:iOS Simulator/ && (/name:iPhone/ || /name:iPad/) { match($0, /id:[^,}]*/); print "platform=iOS Simulator,id=" substr($0, RSTART + 3, RLENGTH - 3); exit }')}"
 
-if [[ -z "$DEVICE_ID" ]]; then
-  echo "No available iPhone Simulator found." >&2
-  xcrun simctl list runtimes >&2
-  xcrun simctl list devices available >&2
+if [[ -z "$DESTINATION" ]]; then
+  echo "No available iPhone or iPad Simulator destination found." >&2
+  xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations >&2
   exit 1
 fi
 
-echo "Testing on Simulator $DEVICE_ID"
-xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
-xcrun simctl bootstatus "$DEVICE_ID" -b
+echo "Testing on $DESTINATION"
 xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
-  -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+  -destination "$DESTINATION" \
   -destination-timeout 120 \
   -derivedDataPath "$PWD/.derivedData" \
   -resultBundlePath "$PWD/TestResults.xcresult" \
   -enableCodeCoverage YES \
   -parallel-testing-enabled NO \
+  -only-testing:CVee-resumebuilderUITests \
   CODE_SIGNING_ALLOWED=NO \
   test

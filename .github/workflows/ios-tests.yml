@@ -30,10 +30,21 @@ jobs:
       - name: Run XCUITest suite
         run: ./scripts/test-ios.sh
 
+      - name: Collect iOS test diagnostics
+        if: failure()
+        run: |
+          mkdir -p ci-diagnostics
+          xcodebuild -version > ci-diagnostics/xcode-version.txt
+          xcodebuild -project CVee-resumebuilder.xcodeproj -scheme CVee-resumebuilder -showdestinations > ci-diagnostics/destinations.txt || true
+          xcrun simctl list devices > ci-diagnostics/simulators.txt || true
+          xcrun simctl list runtimes > ci-diagnostics/runtimes.txt || true
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-test-results
-          path: TestResults.xcresult
+          path: |
+            TestResults.xcresult
+            ci-diagnostics
           if-no-files-found: warn
