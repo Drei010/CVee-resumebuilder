@@ -3,6 +3,7 @@ name: iOS Tests
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -19,6 +20,12 @@ jobs:
         run: |
           xcodebuild -version
           xcrun simctl list runtimes
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Run SwiftLint
+        run: swiftlint lint --config .swiftlint.yml --strict
 
       - name: Run XCUITest suite
         run: ./scripts/test-ios.sh

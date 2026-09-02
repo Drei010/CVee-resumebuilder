@@ -1,0 +1,6 @@
+only_rules:
+  - empty_count
+  - empty_enum_arguments
+
+included:
+  - CVee-resumebuilder
