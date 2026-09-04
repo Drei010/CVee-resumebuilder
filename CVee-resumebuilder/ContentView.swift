@@ -745,7 +745,7 @@ struct WorkExperienceEditor: View {
 
 private enum ResumeWizardStep: Int, CaseIterable {
     case start, workLibrary, jobDescription, summary, generated
-    var title: String { ["Start", "Work Library", "Job Description", "Summary", "Generated Resume"][rawValue] }
+    var title: String { ["Start", "Work Library", "Job Description", "Summary", "Generated"][rawValue] }
 }
 
 private enum ResumeStartMode: String, CaseIterable {
@@ -849,14 +849,22 @@ struct NewResumeView: View {
     private var progressHeader: some View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(ResumeWizardStep.allCases, id: \.rawValue) { item in
-                VStack(spacing: 6) {
-                    Circle().fill(item.rawValue <= step.rawValue ? CVeeColors.blue : Color.secondary.opacity(0.25)).frame(width: item == step ? 14 : 10, height: item == step ? 14 : 10)
-                    Text(item.title).font(.caption2).foregroundStyle(item == step ? .primary : .secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: 3) {
+                    Circle()
+                        .fill(item.rawValue < step.rawValue ? Color.green : item == step ? CVeeColors.blue : Color.secondary.opacity(0.25))
+                        .frame(width: item == step ? 11 : 8, height: item == step ? 11 : 8)
+                    Text(item.title)
+                        .font(.system(size: item == step ? 12 : 9, weight: item == step ? .semibold : .regular))
+                        .foregroundStyle(item == step ? .primary : .secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.55)
+                        .frame(maxWidth: .infinity, minHeight: 14)
                 }.frame(maxWidth: .infinity)
-                if item != .generated { Rectangle().fill(item.rawValue < step.rawValue ? CVeeColors.blue : Color.secondary.opacity(0.2)).frame(height: 2).padding(.bottom, 20) }
+                if item != .generated { Rectangle().fill(item.rawValue < step.rawValue ? Color.green : Color.secondary.opacity(0.2)).frame(height: 2).padding(.bottom, 15) }
             }
         }
-        .padding(.horizontal, 8).padding(.top, 12).padding(.bottom, 8).accessibilityElement(children: .ignore)
+        .padding(.horizontal, 4).padding(.top, 6).padding(.bottom, 4).accessibilityElement(children: .ignore)
         .accessibilityIdentifier("wizard.progress")
         .accessibilityLabel("Step \(step.rawValue + 1) of \(ResumeWizardStep.allCases.count): \(step.title)")
     }
