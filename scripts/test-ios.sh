@@ -36,6 +36,7 @@ echo "Building UI tests for $DESTINATION"
 xcodebuild "${COMMON_ARGS[@]}" build-for-testing
 
 echo "Running UI tests for $DESTINATION"
+rm -rf "$RESULT_BUNDLE"
 xcodebuild "${COMMON_ARGS[@]}" \
   -resultBundlePath "$RESULT_BUNDLE" \
   -enableCodeCoverage YES \

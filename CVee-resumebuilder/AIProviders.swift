@@ -25,20 +25,27 @@ enum AIProvider: String, CaseIterable, Identifiable {
 
 struct APIKeyStore {
     private let service = "com.drei010.CVee-resumebuilder.ai-keys"
+    private var isUITesting: Bool { ProcessInfo.processInfo.arguments.contains("-ui-testing") }
+    private func testKey(_ provider: AIProvider) -> String { "ui-testing.ai-key.\(provider.rawValue)" }
     func key(for provider: AIProvider) -> String? {
+        if isUITesting { return UserDefaults.standard.string(forKey: testKey(provider)) }
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: provider.rawValue, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var result: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
     func save(_ key: String, for provider: AIProvider) throws {
+        if isUITesting { UserDefaults.standard.set(key, forKey: testKey(provider)); return }
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: provider.rawValue]
         let update: [String: Any] = [kSecValueData as String: Data(key.utf8), kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
         if SecItemUpdate(query as CFDictionary, update as CFDictionary) == errSecItemNotFound {
             var add = query; add.merge(update) { _, new in new }; guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { throw AIProviderError.keychain }
         }
     }
-    func delete(for provider: AIProvider) { let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: provider.rawValue]; SecItemDelete(query as CFDictionary) }
+    func delete(for provider: AIProvider) {
+        if isUITesting { UserDefaults.standard.removeObject(forKey: testKey(provider)); return }
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: provider.rawValue]; SecItemDelete(query as CFDictionary)
+    }
     func deleteAll() { AIProvider.allCases.filter(\.requiresKey).forEach(delete(for:)) }
 }
 

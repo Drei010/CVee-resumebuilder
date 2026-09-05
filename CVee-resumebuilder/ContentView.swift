@@ -222,7 +222,6 @@ struct AIProviderView: View {
                     .foregroundStyle(.secondary)
                 .onChange(of: provider) { _, newProvider in
                     modelID = selection.model(for: newProvider).id
-                    hasSavedKey = selection.hasKey(for: newProvider)
                 }
             }
             Section("Model") {
@@ -243,6 +242,7 @@ struct AIProviderView: View {
                         Label("API key saved", systemImage: "checkmark.shield.fill")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(CVeeColors.green)
+                            .accessibilityIdentifier("ai-provider.key-saved")
                     }
                     Button {
                         showingKeyEditor = true
@@ -261,7 +261,9 @@ struct AIProviderView: View {
         .navigationTitle("AI Provider")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingKeyEditor) {
-            AIProviderKeyView(provider: provider, appleUnavailable: appleUnavailable)
+            AIProviderKeyView(provider: provider, appleUnavailable: appleUnavailable) {
+                hasSavedKey = true
+            }
         }
         .onChange(of: showingKeyEditor) { _, isPresented in
             if !isPresented { hasSavedKey = selection.hasKey(for: provider) }
@@ -279,6 +281,7 @@ struct AIProviderKeyView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let provider: AIProvider
     let appleUnavailable: Bool
+    let onSaved: () -> Void
     private let selection = AIProviderSelection()
     @State private var keyDraft = ""
     @State private var showingDeletePrompt = false
@@ -360,6 +363,7 @@ struct AIProviderKeyView: View {
             do {
                 try selection.keyStore.save(key, for: provider)
                 selection.setProvider(provider)
+                onSaved()
                 keyDraft = ""
                 dismiss()
             } catch { message = error.localizedDescription }

@@ -130,6 +130,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launchArguments = ["-ui-testing"]
         app.launch()
         app.buttons["Profile"].firstMatch.tap()
+        app.swipeUp()
         let providerLink = app.buttons["profile.ai-provider"]
         XCTAssertTrue(providerLink.waitForExistence(timeout: timeout))
         providerLink.tap()
@@ -144,16 +145,20 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(key.waitForExistence(timeout: timeout))
         key.tap()
         key.typeText("ui-test-key")
-        app.buttons["ai-provider.save-key"].tap()
-        XCTAssertTrue(app.staticTexts["API key saved"].waitForExistence(timeout: timeout))
+        let saveKey = app.buttons["ai-provider.save-key"]
+        let saveEnabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: saveKey)
+        wait(for: [saveEnabled], timeout: timeout)
+        saveKey.tap()
+        app.swipeUp()
+        XCTAssertTrue(app.descendants(matching: .any)["ai-provider.key-saved"].waitForExistence(timeout: timeout))
         app.buttons["ai-provider.edit-key"].tap()
         XCTAssertTrue(app.buttons["ai-provider.save-key"].waitForExistence(timeout: timeout))
         XCTAssertTrue(app.buttons["Save"].exists)
         app.buttons["Cancel"].tap()
-        XCTAssertTrue(app.staticTexts["API key saved"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.descendants(matching: .any)["ai-provider.key-saved"].waitForExistence(timeout: timeout))
         app.buttons["ai-provider.edit-key"].tap()
         app.buttons["ai-provider.remove-key"].tap()
-        app.buttons["Delete API key"].tap()
+        app.buttons.matching(identifier: "Delete API key").element(boundBy: 0).tap()
     }
 
     func testGeneratedResumePreviewSaveReopenAndExport() {
