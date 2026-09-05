@@ -23,11 +23,7 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(app.textFields["Job title"].waitForExistence(timeout: timeout))
         app.buttons["Cancel"].tap()
         for tab in ["Saved Jobs", "Resume Wizard", "Resumes", "Profile"] {
-            if tab == "Profile", app.frame.width > 600 {
-                print(app.debugDescription)
-                app.tabBars.firstMatch.swipeLeft()
-            }
-            app.buttons[tab].firstMatch.tap()
+            selectTab(tab, in: app)
             XCTAssertTrue(app.navigationBars[tab].waitForExistence(timeout: timeout))
             capture(app, tab.replacingOccurrences(of: " ", with: "-").lowercased())
         }
@@ -55,14 +51,14 @@ final class ResumeWizardUITests: XCTestCase {
         app.buttons["Import Tasks List"].tap()
         XCTAssertTrue(app.buttons["import.choose-document"].waitForExistence(timeout: timeout))
         app.buttons["Cancel"].tap()
-        app.buttons["Profile"].firstMatch.tap()
+        selectTab("Profile", in: app)
         app.swipeUp()
         app.swipeUp()
         app.buttons["Clear all data"].tap()
         XCTAssertTrue(app.textFields["Type CLEAR to confirm"].waitForExistence(timeout: timeout))
         XCTAssertTrue(app.buttons.matching(identifier: "Clear all data").allElementsBoundByIndex.contains { !$0.isEnabled })
         app.buttons["Cancel"].tap()
-        app.buttons["Tasks"].firstMatch.tap()
+        selectTab("Tasks", in: app)
         XCTAssertTrue(task.waitForExistence(timeout: timeout))
     }
 
@@ -85,6 +81,15 @@ final class ResumeWizardUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private func selectTab(_ name: String, in app: XCUIApplication) {
+        if name == "Profile", app.frame.width > 600, app.buttons["Next Page"].exists {
+            app.buttons["Next Page"].tap()
+        } else if app.frame.width > 600, app.buttons["Previous Page"].exists {
+            app.buttons["Previous Page"].tap()
+        }
+        app.buttons[name].firstMatch.tap()
     }
 
     func testWizardProgressAndBackNavigation() {
@@ -129,7 +134,7 @@ final class ResumeWizardUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing"]
         app.launch()
-        app.buttons["Profile"].firstMatch.tap()
+        selectTab("Profile", in: app)
         app.swipeUp()
         let providerLink = app.buttons["profile.ai-provider"]
         XCTAssertTrue(providerLink.waitForExistence(timeout: timeout))
