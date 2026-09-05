@@ -53,12 +53,25 @@ Honor or award, if provided
 Generate the resume now following this layout exactly.
 ```
 
-## Structured output contract
+## Runtime contract
 
-The generation service maps the model response into `ResumeDraft`: `name`, `summary`, `experience`
-(role heading plus bullets), and `skills`. The renderer is template-agnostic and currently uses
-the Jake’s Resume template. Unsupported devices are blocked by the availability guard; there is no
-cloud or API fallback.
+`ResumeGenerationService` sends the profile, optional baseline text, target job text, and selected
+work entries to Foundation Models. It returns a `ResumeDraft` containing `name`, `summary`,
+`experience` (role heading plus bullets), `skills`, and the original plain-text response. The
+current parser uses the first sufficiently long line as the summary and lines beginning with `-`
+or `•` as candidate skills; the saved UI displays and edits the raw text. If the model returns no
+raw text, `JakesResumeTemplate` renders the draft using the `jakes` template identifier.
+
+Saved resumes currently contain one RTF-backed `ResumeSection`, even though the model supports
+section kinds for future structured editing. Unsupported devices are blocked by the availability
+guard; there is no cloud or API fallback.
+
+## Related AI behavior
+
+Task import reads PDF, TXT, or DOCX text, then `TaskImportService` splits it into distinct task
+contributions in batches of up to 20 source lines. `TaskEnhancementService` rewrites one task into
+exactly two sentences while preserving every supplied number, tool, scope, and outcome. Both
+paths use the same on-device availability guard and must omit unsupported facts.
 
 ## Regression examples
 

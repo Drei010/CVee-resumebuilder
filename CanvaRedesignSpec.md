@@ -1,5 +1,13 @@
 # TalentEdge Mobile Canva Redesign Spec
 
+## Relationship to the current app
+
+This is a future mobile redesign proposal, not a description of the shipped CVee UI. The native
+implementation currently uses the five tabs documented in `README.md`, SwiftUI Forms/Lists, a
+five-step Resume Wizard, pasted-text job entry, PDF/TXT/DOCX task import, PDF baseline import, and
+PDF/RTF export. Proposed items such as DOCX/TXT export, API provider choice, language settings,
+Markdown upload, and a separate resume editor/preview mode are not currently implemented.
+
 This proposal is an **append-only** extension to the existing Canva document. Existing pages 1–3 must remain unchanged.
 
 ## Visual direction

@@ -21,6 +21,18 @@ struct CVee_resumebuilderApp: App {
                 preconditionFailure("Could not create an in-memory ModelContainer: \(error)")
             }()
         }
+
+        if isUITesting, ProcessInfo.processInfo.arguments.contains("-resume-format-fixture") {
+            let context = sharedModelContainer.mainContext
+            let experience = WorkExperience(jobTitle: "Full Stack AI Developer", company: "Accenture Philippines", tasks: [
+                "Reduced manual search time by 83% by developing a custom RAG-based knowledge base with Python and LangChain.",
+                "Delivered annual cost savings by developing TypeScript data-processing tools to automate reporting workflows."
+            ])
+            let job = JobTarget(sourceType: .pastedText, rawText: "Full Stack AI Developer role requiring Python, TypeScript, React, and AI application development.", parsedTitle: "Full Stack AI Developer", parsedCompany: "Accenture Philippines")
+            context.insert(experience)
+            context.insert(job)
+            try? context.save()
+        }
     }
 
     var body: some Scene {
