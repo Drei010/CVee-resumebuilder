@@ -6,10 +6,9 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXFileReference section */
-		68179DF63010721600B4AB71 /* CVee-resumebuilder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "CVee-resumebuilder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		F10000000000000000000006 /* CVee-resumebuilderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "CVee-resumebuilderUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-/* End PBXFileReference section */
+/* Begin PBXBuildFile section */
+		F10000000000000000000010 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = F10000000000000000000011 /* ZIPFoundation */; };
+/* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		F1000000000000000000000A /* PBXContainerItemProxy */ = {
@@ -20,6 +19,11 @@
 			remoteInfo = "CVee-resumebuilder";
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		68179DF63010721600B4AB71 /* CVee-resumebuilder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "CVee-resumebuilder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F10000000000000000000006 /* CVee-resumebuilderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "CVee-resumebuilderUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		68179DF83010721600B4AB71 /* CVee-resumebuilder */ = {
@@ -38,22 +42,19 @@
 		68179DF33010721600B4AB71 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
-			files = (F10000000000000000000010 /* ZIPFoundation in Frameworks */,);
+			files = (
+				F10000000000000000000010 /* ZIPFoundation in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
-
-/* Begin PBXFrameworksBuildPhase section */
-		F10000000000000000000004 /* Frameworks */ = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-/* End PBXFrameworksBuildPhase section */
-
-/* Begin PBXResourcesBuildPhase section */
-		F10000000000000000000005 /* Resources */ = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-/* End PBXResourcesBuildPhase section */
-
-/* Begin PBXSourcesBuildPhase section */
-		F10000000000000000000003 /* Sources */ = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-/* End PBXSourcesBuildPhase section */
 
 /* Begin PBXGroup section */
 		68179DED3010721600B4AB71 = {
@@ -61,6 +62,7 @@
 			children = (
 				68179DF83010721600B4AB71 /* CVee-resumebuilder */,
 				68179DF73010721600B4AB71 /* Products */,
+				684D3F65304BCA7500DE3F4B /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -71,6 +73,14 @@
 				F10000000000000000000006 /* CVee-resumebuilderUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		684D3F65304BCA7500DE3F4B /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				F10000000000000000000001 /* CVee-resumebuilderUITests */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -101,35 +111,26 @@
 		};
 		F10000000000000000000002 /* CVee-resumebuilderUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = F10000000000000000000007 /* Build configuration list for CVee-resumebuilderUITests */;
+			buildConfigurationList = F10000000000000000000007 /* Build configuration list for PBXNativeTarget "CVee-resumebuilderUITests" */;
 			buildPhases = (
 				F10000000000000000000003 /* Sources */,
 				F10000000000000000000004 /* Frameworks */,
 				F10000000000000000000005 /* Resources */,
 			);
-			buildRules = ();
+			buildRules = (
+			);
 			dependencies = (
 				F1000000000000000000000B /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (F10000000000000000000001 /* CVee-resumebuilderUITests */);
-			name = CVee-resumebuilderUITests;
-			productName = CVee-resumebuilderUITests;
+			fileSystemSynchronizedGroups = (
+				F10000000000000000000001 /* CVee-resumebuilderUITests */,
+			);
+			name = "CVee-resumebuilderUITests";
+			productName = "CVee-resumebuilderUITests";
 			productReference = F10000000000000000000006 /* CVee-resumebuilderUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
-
-/* Begin PBXBuildFile section */
-		F10000000000000000000010 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = F10000000000000000000011 /* ZIPFoundation */; };
-/* End PBXBuildFile section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		F10000000000000000000012 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/weichsel/ZIPFoundation.git"; requirement = {kind = upToNextMajorVersion; minimumVersion = 0.9.0;}; };
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		F10000000000000000000011 /* ZIPFoundation */ = {isa = XCSwiftPackageProductDependency; package = F10000000000000000000012 /* XCRemoteSwiftPackageReference "ZIPFoundation" */; productName = ZIPFoundation; };
-/* End XCSwiftPackageProductDependency section */
 
 /* Begin PBXProject section */
 		68179DEE3010721600B4AB71 /* Project object */ = {
@@ -156,8 +157,10 @@
 				Base,
 			);
 			mainGroup = 68179DED3010721600B4AB71;
-			packageReferences = (F10000000000000000000012 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,);
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F10000000000000000000012 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 68179DF73010721600B4AB71 /* Products */;
 			projectDirPath = "";
@@ -177,15 +180,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-/* End PBXResourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		F1000000000000000000000B /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 68179DF53010721600B4AB71 /* CVee-resumebuilder */;
-			targetProxy = F1000000000000000000000A /* PBXContainerItemProxy */;
+		F10000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
-/* End PBXTargetDependency section */
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		68179DF23010721600B4AB71 /* Sources */ = {
@@ -195,7 +197,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F10000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F1000000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 68179DF53010721600B4AB71 /* CVee-resumebuilder */;
+			targetProxy = F1000000000000000000000A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		68179DFF3010721700B4AB71 /* Debug */ = {
@@ -324,11 +341,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 58WCAKD6L6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -355,11 +373,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 58WCAKD6L6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -379,8 +398,34 @@
 			};
 			name = Release;
 		};
-		F10000000000000000000008 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = "com.drei010.CVee-resumebuilderUITests"; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = "CVee-resumebuilder"; }; name = Debug; };
-		F10000000000000000000009 /* Release */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 26.0; PRODUCT_BUNDLE_IDENTIFIER = "com.drei010.CVee-resumebuilderUITests"; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = "CVee-resumebuilder"; }; name = Release; };
+		F10000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.drei010.CVee-resumebuilderUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "CVee-resumebuilder";
+			};
+			name = Debug;
+		};
+		F10000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.drei010.CVee-resumebuilderUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "CVee-resumebuilder";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -402,8 +447,35 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		F10000000000000000000007 /* Build configuration list for PBXNativeTarget "CVee-resumebuilderUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000008 /* Debug */,
+				F10000000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
-		F10000000000000000000007 /* Build configuration list for CVee-resumebuilderUITests */ = { isa = XCConfigurationList; buildConfigurations = (F10000000000000000000008 /* Debug */, F10000000000000000000009 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+
+/* Begin XCRemoteSwiftPackageReference section */
+		F10000000000000000000012 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F10000000000000000000011 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F10000000000000000000012 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 68179DEE3010721600B4AB71 /* Project object */;
 }

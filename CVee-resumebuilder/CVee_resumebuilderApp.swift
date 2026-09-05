@@ -36,7 +36,11 @@ struct CVee_resumebuilderApp: App {
     }
 
     var body: some Scene {
-        WindowGroup { ContentView() }
+        WindowGroup {
+            ContentView()
+                .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("-ui-testing") &&
+                                      ProcessInfo.processInfo.arguments.contains("-ui-testing-dark") ? .dark : nil)
+        }
             .modelContainer(sharedModelContainer)
     }
 }

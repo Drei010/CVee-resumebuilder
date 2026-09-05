@@ -1,0 +1,53 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "18162C00-D9B7-49C2-A603-B1B75E69C356",
+        "deviceName" : "iPad Pro 11-inch (M5)",
+        "exportedFileName" : "B2C0839A-6F47-4665-A798-EEBB4A0C8C25.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "profile_0_BFEC388A-1AAE-477B-A7CC-F9EB893E965C.png",
+        "timestamp" : 1788586513.159
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "18162C00-D9B7-49C2-A603-B1B75E69C356",
+        "deviceName" : "iPad Pro 11-inch (M5)",
+        "exportedFileName" : "964EC9ED-9A83-482D-9F07-643C2B36CCF1.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "resumes_0_351182D8-678E-4624-89BC-85F4DB3B332D.png",
+        "timestamp" : 1788586512.178
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "18162C00-D9B7-49C2-A603-B1B75E69C356",
+        "deviceName" : "iPad Pro 11-inch (M5)",
+        "exportedFileName" : "139F9755-54D2-43B5-AC0A-1D43A50A6011.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "resume-wizard_0_118E9C20-0608-45A3-9242-62D411F894C3.png",
+        "timestamp" : 1788586509.568
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "18162C00-D9B7-49C2-A603-B1B75E69C356",
+        "deviceName" : "iPad Pro 11-inch (M5)",
+        "exportedFileName" : "04623E69-F0CC-4E64-ACA1-20DBC0FD6D1C.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "saved-jobs_0_A340EBC1-60BD-4D23-91AA-435D6C9F844D.png",
+        "timestamp" : 1788586506.844
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "18162C00-D9B7-49C2-A603-B1B75E69C356",
+        "deviceName" : "iPad Pro 11-inch (M5)",
+        "exportedFileName" : "7D8E95A7-870F-4A9E-96DD-888ED80B780A.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "tasks-light_0_33834C8E-861C-401F-BAC5-EF9FB277A60F.png",
+        "timestamp" : 1788586481.565
+      }
+    ],
+    "testIdentifier" : "ResumeWizardUITests/testTaskGroupsAndCreationRemainAccessible()",
+    "testIdentifierURL" : "test://com.apple.xcode/CVee-resumebuilder/CVee-resumebuilderUITests/ResumeWizardUITests/testTaskGroupsAndCreationRemainAccessible"
+  }
+]

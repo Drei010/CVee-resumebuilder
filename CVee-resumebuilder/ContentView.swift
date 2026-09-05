@@ -4,14 +4,86 @@ import UIKit
 import PDFKit
 import UniformTypeIdentifiers
 
+// THESIS: CVee's reusable experience library in the supplied Asana list language.
+// OWN-WORLD: coral actions, white/charcoal canvas, flat rows and tinted metadata.
+// STORY: capture experience, select relevant facts, generate and export a resume.
+// FIRST VIEWPORT: native large title, company sections, persistent trailing coral add action.
+// FORM: user-pinned Asana reference overrides concept seed 3f85a9cc.
+// FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
 private enum CVeeColors {
-    static let blue = Color(red: 13 / 255, green: 79 / 255, blue: 184 / 255)
-    static let page = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? .systemBackground : UIColor(red: 242 / 255, green: 247 / 255, blue: 252 / 255, alpha: 1)
-    })
-    static let card = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? .secondarySystemBackground : UIColor(red: 232 / 255, green: 250 / 255, blue: 255 / 255, alpha: 1)
-    })
+    static func adaptive(_ light: UInt32, _ dark: UInt32) -> Color {
+        Color(uiColor: UIColor { traits in
+            let hex = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: CGFloat((hex >> 16) & 255) / 255,
+                           green: CGFloat((hex >> 8) & 255) / 255,
+                           blue: CGFloat(hex & 255) / 255, alpha: 1)
+        })
+    }
+    static let coral = adaptive(0xF06A6A, 0xF06A6A)
+    static let page = adaptive(0xFFFFFF, 0x1E1F21)
+    static let card = adaptive(0xF9F8F8, 0x252628)
+    static let divider = adaptive(0xEDEBE9, 0x35363A)
+    static let ink = adaptive(0x1E1F21, 0xF5F4F2)
+    static let buttonInk = adaptive(0x1E1F21, 0x1E1F21)
+    static let secondary = adaptive(0x6D6E6F, 0xA9A9AA)
+    static let green = adaptive(0x62D26F, 0x62D26F)
+    // Darker foregrounds preserve contrast on the reference's soft object tints.
+    static let objectInk = adaptive(0x2855A2, 0xA8C5FF)
+    static let objectTint = adaptive(0x4573D2, 0x4573D2)
+}
+
+private struct CoralButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    var horizontalPadding: CGFloat = 26
+    var verticalPadding: CGFloat = 13
+    var minimumHeight: CGFloat = 44
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(CVeeColors.buttonInk)
+            .padding(.horizontal, horizontalPadding).padding(.vertical, verticalPadding)
+            .frame(minHeight: minimumHeight)
+            .background(CVeeColors.coral.opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.4),
+                        in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct WorkspaceSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        content.frame(maxWidth: 760)
+            .frame(maxWidth: .infinity)
+            .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .background(CVeeColors.page)
+            .listRowBackground(CVeeColors.card)
+    }
+}
+
+private struct MetadataPill: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(CVeeColors.objectInk)
+            .padding(.horizontal, 9).padding(.vertical, 3)
+            .background(CVeeColors.objectTint.opacity(0.16), in: Capsule())
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct SelectionCircle: View {
+    let isSelected: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            .font(.title3)
+            .foregroundStyle(isSelected ? CVeeColors.green : CVeeColors.secondary)
+            .scaleEffect(isSelected ? 1.05 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isSelected)
+            .sensoryFeedback(.selection, trigger: isSelected)
+            .accessibilityHidden(true)
+    }
 }
 
 struct ContentView: View {
@@ -37,7 +109,11 @@ struct ContentView: View {
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
                 .tag(4)
         }
-        .tint(CVeeColors.blue)
+        .tint(CVeeColors.coral)
+        .foregroundStyle(CVeeColors.ink)
+        .scrollContentBackground(.hidden)
+        .background(CVeeColors.page)
+        .toolbarBackground(CVeeColors.page, for: .tabBar, .navigationBar)
     }
 }
 
@@ -71,18 +147,29 @@ struct ProfileView: View {
                 Button("Update personal info") { showingEdit = true }
             }
             Section("About") {
-                Text("CVee is a focused workspace for organizing your experience, saving target jobs, and building tailored resumes from the facts you provide.")
-                Text("Create reusable tasks, connect them to resumes, review job descriptions, and export polished drafts when you are ready to apply.")
-                Label("Resume generation stays on-device when supported.", systemImage: "lock.shield")
+                Label("CVee is a focused workspace for organizing your experience, saving target jobs, and building tailored resumes from the facts you provide.", systemImage: "person.2")
+                Label("Create reusable tasks, connect them to resumes, review job descriptions, and export polished drafts when you are ready to apply.", systemImage: "checklist")
+                Label("AI uses Apple on-device when selected, or your configured provider.", systemImage: "lock.shield")
                     .foregroundStyle(.secondary)
-                LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
-                NavigationLink("Terms and conditions") { TermsAndConditionsView() }
-                Link("Contact support · andreihidalgo16@gmail.com", destination: URL(string: "mailto:andreihidalgo16@gmail.com")!)
+                Label("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")", systemImage: "info.circle")
+                NavigationLink { TermsAndConditionsView() } label: {
+                    Label("Terms and conditions", systemImage: "doc.text")
+                }
+                Link(destination: URL(string: "mailto:andreihidalgo16@gmail.com")!) {
+                    Label("Contact support · andreihidalgo16@gmail.com", systemImage: "envelope")
+                }
             }
             Section("Advanced settings") {
+                NavigationLink {
+                    AIProviderView()
+                } label: {
+                    LabeledContent("AI Provider", value: AIProviderSelection().provider()?.name ?? "Not configured")
+                }
+                .accessibilityIdentifier("profile.ai-provider")
                 Button("Clear all data", role: .destructive) { showingClearPrompt = true }
             }
         }
+        .modifier(WorkspaceSurface())
         .navigationTitle("Profile")
         .sheet(isPresented: $showingEdit) {
             ProfileEditView(name: $name, email: $email, phone: $phone, location: $location, linkedin: $linkedin, github: $github, education: $education, skills: $skills, certifications: $certifications) { showingSavedMessage = true }
@@ -100,6 +187,191 @@ struct ProfileView: View {
         (try? modelContext.fetch(FetchDescriptor<Resume>()))?.forEach(modelContext.delete)
         try? modelContext.save()
         name = "Andrei Hidalgo"; email = ""; phone = ""; location = ""; linkedin = ""; github = ""; education = ""; skills = ""; certifications = ""
+        AIProviderSelection().clear()
+    }
+}
+
+struct AIProviderView: View {
+    private let selection = AIProviderSelection()
+    @State private var provider = AIProvider.apple
+    @State private var modelID = AIProvider.apple.defaultModel.id
+    @State private var showingKeyEditor = false
+    @State private var hasSavedKey = false
+
+    private var appleUnavailable: Bool { FoundationModelsAvailability().state().description == "This device does not support Apple Intelligence generation." }
+    private var modelSelection: Binding<String> {
+        Binding(
+            get: { provider.models.contains(where: { $0.id == modelID }) ? modelID : provider.defaultModel.id },
+            set: { newValue in
+                modelID = newValue
+                if let model = provider.models.first(where: { $0.id == newValue }) { selection.setModel(model, for: provider) }
+            }
+        )
+    }
+
+    var body: some View {
+        Form {
+            Section("Provider") {
+                Picker("Provider", selection: $provider) {
+                    ForEach(AIProvider.allCases) { item in
+                        Text(item.name).tag(item).disabled(item == .apple && appleUnavailable)
+                    }
+                }
+                .accessibilityIdentifier("ai-provider.selector")
+                LabeledContent("Status", value: provider == .apple ? (appleUnavailable ? "Unavailable" : "On-device") : (hasSavedKey ? "Configured" : "Needs API key"))
+                    .foregroundStyle(.secondary)
+                .onChange(of: provider) { _, newProvider in
+                    modelID = selection.model(for: newProvider).id
+                    hasSavedKey = selection.hasKey(for: newProvider)
+                }
+            }
+            Section("Model") {
+                if provider == .apple {
+                    LabeledContent("Model", value: "System Model")
+                    Text(appleUnavailable ? FoundationModelsAvailability().state().description : "Apple selects the on-device model automatically.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Picker("Model", selection: modelSelection) {
+                        ForEach(provider.models) { model in Text(model.name).tag(model.id) }
+                    }
+                    .accessibilityIdentifier("ai-provider.model")
+                }
+            }
+            if provider.requiresKey {
+                Section("API key") {
+                    if hasSavedKey {
+                        Label("API key saved", systemImage: "checkmark.shield.fill")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(CVeeColors.green)
+                    }
+                    Button {
+                        showingKeyEditor = true
+                    } label: {
+                        Label(hasSavedKey ? "Edit API key" : "Add API key", systemImage: hasSavedKey ? "pencil" : "key.fill")
+                    }
+                    .accessibilityIdentifier("ai-provider.edit-key")
+                }
+            }
+            Section {
+                Text("Apple Intelligence processes content on this device. Third-party providers receive the relevant resume, profile, job, or task text and may charge your provider account.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .modifier(WorkspaceSurface())
+        .navigationTitle("AI Provider")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingKeyEditor) {
+            AIProviderKeyView(provider: provider, appleUnavailable: appleUnavailable)
+        }
+        .onChange(of: showingKeyEditor) { _, isPresented in
+            if !isPresented { hasSavedKey = selection.hasKey(for: provider) }
+        }
+        .onAppear {
+            if let saved = selection.provider() { provider = saved }
+            modelID = selection.model(for: provider).id
+            hasSavedKey = selection.hasKey(for: provider)
+        }
+    }
+}
+
+struct AIProviderKeyView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let provider: AIProvider
+    let appleUnavailable: Bool
+    private let selection = AIProviderSelection()
+    @State private var keyDraft = ""
+    @State private var showingDeletePrompt = false
+    @State private var message: String?
+
+    private var hasKey: Bool { selection.hasKey(for: provider) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Label("Connect " + provider.name, systemImage: "key.fill")
+                        .font(.headline)
+                    Text("Your key is stored securely on this device and used only when you run an AI feature.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if hasKey {
+                        Label("API key saved", systemImage: "checkmark.shield.fill")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(CVeeColors.green)
+                    }
+                    SecureField(hasKey ? "Replace saved API key" : "Paste API key", text: $keyDraft)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textContentType(.password)
+                        .accessibilityIdentifier("ai-provider.api-key")
+                    Group {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            VStack(alignment: .leading, spacing: 12) {
+                                keyActions
+                            }
+                        } else {
+                            HStack {
+                                keyActions
+                            }
+                        }
+                    }
+                }
+            }
+            .modifier(WorkspaceSurface())
+            .navigationTitle(hasKey ? "Edit API key" : "Add API key")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+            .confirmationDialog("Delete this API key?", isPresented: $showingDeletePrompt, titleVisibility: .visible) {
+                Button("Delete API key", role: .destructive) {
+                    selection.keyStore.delete(for: provider)
+                    if selection.provider() == provider { selection.setProvider(appleUnavailable ? nil : .apple) }
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("You will need to enter it again before using " + provider.name + ".")
+            }
+            .alert("API key", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+                Button("OK", role: .cancel) { message = nil }
+            } message: { Text(message ?? "") }
+        }
+    }
+
+    @ViewBuilder
+    private var keyActions: some View {
+        if hasKey {
+            Button(role: .destructive) {
+                showingDeletePrompt = true
+            } label: {
+                Text("Delete API key")
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityHint("Removes the saved key after confirmation")
+            .accessibilityIdentifier("ai-provider.remove-key")
+            if !dynamicTypeSize.isAccessibilitySize { Spacer() }
+        }
+        Button {
+            let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else { return }
+            do {
+                try selection.keyStore.save(key, for: provider)
+                selection.setProvider(provider)
+                keyDraft = ""
+                dismiss()
+            } catch { message = error.localizedDescription }
+        } label: {
+            Text("Save")
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .buttonStyle(CoralButtonStyle(horizontalPadding: 16, verticalPadding: 8))
+        .fixedSize(horizontal: true, vertical: false)
+        .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .accessibilityHint("Saves the entered key and activates this provider")
+        .accessibilityIdentifier("ai-provider.save-key")
     }
 }
 
@@ -117,7 +389,7 @@ struct TermsAndConditionsView: View {
                 termsSection("2. Your content", "You retain ownership of the work history, job descriptions, profile information, and resume content you add to CVee. You grant CVee permission to store and process that content on your device so the app can provide its features.")
                 termsSection("3. Resume generation", "Resume drafts are generated from the information you provide. CVee does not guarantee accuracy, completeness, job placement, interviews, or employment outcomes. Review every draft for accuracy before sharing or submitting it.")
                 termsSection("4. Exports and sharing", "You choose when to export or share a resume. You are responsible for selecting the correct document, destination, and recipients, and for complying with any requirements of the employer or platform receiving it.")
-                termsSection("5. Privacy Policy", "CVee stores saved tasks, jobs, resumes, and profile information in the app’s local data store. Resume generation is designed to run on-device when supported. CVee does not require an account for local app use. Deleting the app or using Clear all data may permanently remove this information. Keep your own backup of content you need to retain.")
+                termsSection("5. Privacy Policy", "CVee stores saved tasks, jobs, resumes, and profile information in the app’s local data store. Apple Intelligence processing runs on-device when selected. If you choose a third-party AI provider, relevant resume, profile, job, or task text is sent to that provider under your API key and its terms. CVee does not require an account for local app use. Deleting the app or using Clear all data may permanently remove this information. Keep your own backup of content you need to retain.")
                 termsSection("6. Third-party services", "LinkedIn listings and sharing destinations may be provided by third parties. Their availability, content, and terms are controlled by those services, not CVee.")
                 termsSection("7. Acceptable use", "Do not use CVee to submit misleading, fraudulent, unlawful, or infringing information. You are responsible for ensuring your content and use of exported resumes comply with applicable rules and agreements.")
                 termsSection("8. Changes and availability", "Features may change, be suspended, or become unavailable as the app is updated. We may update these terms when the app’s features or requirements change.")
@@ -194,10 +466,12 @@ struct ProfileEditView: View {
                         onSave()
                         dismiss()
                     }
+                    .buttonStyle(CoralButtonStyle())
                     .frame(maxWidth: .infinity)
                     .disabled(!invalidURLFields.isEmpty)
                 }
             }
+            .modifier(WorkspaceSurface())
             .navigationTitle("Update personal info")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
@@ -224,6 +498,7 @@ struct ClearAllDataView: View {
                         .disabled(phrase != "CLEAR")
                 }
             }
+            .modifier(WorkspaceSurface())
             .navigationTitle("Confirm deletion")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
@@ -239,6 +514,8 @@ struct WorkHistoryView: View {
     @State private var showingImport = false
     @State private var searchText = ""
     @State private var selectedCompany = "All companies"
+    @State private var collapsedCompanies = Set<String>()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var companies: [String] {
         Array(Set(experiences.map(\.company).filter { !$0.isEmpty })).sorted()
@@ -260,28 +537,84 @@ struct WorkHistoryView: View {
             if filteredExperiences.isEmpty {
                 ContentUnavailableView(searchText.isEmpty && selectedCompany == "All companies" ? "No work history" : "No matching tasks", systemImage: "magnifyingglass", description: Text(searchText.isEmpty && selectedCompany == "All companies" ? "Add roles once and reuse them for every tailored resume." : "Try a different search or filter."))
             }
-            ForEach(filteredExperiences) { experience in
-                Button { selected = experience } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(experience.jobTitle).font(.headline)
-                        Text(experience.company).foregroundStyle(.secondary)
-                        Text(experience.tasks.isEmpty ? "No task details yet" : experience.tasks.first ?? "")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                        Text(experience.dateRange).font(.caption).foregroundStyle(.secondary)
+            ForEach(Array(Set(filteredExperiences.map(\.company))).sorted(), id: \.self) { company in
+                Section {
+                    if !collapsedCompanies.contains(company) {
+                        ForEach(filteredExperiences.filter { $0.company == company }) { experience in
+                            Button { selected = experience } label: {
+                                HStack(alignment: .top, spacing: 12) {
+                                    Image(systemName: "text.badge.checkmark")
+                                        .font(.system(size: 20))
+                                        .foregroundStyle(CVeeColors.secondary)
+                                        .frame(width: 22).accessibilityHidden(true)
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(experience.jobTitle).font(.subheadline.weight(.medium))
+                                        Text(experience.tasks.first ?? "No task details yet")
+                                            .font(.subheadline).foregroundStyle(CVeeColors.secondary).lineLimit(2)
+                                        MetadataPill(text: experience.company.isEmpty ? "Work history" : experience.company)
+                                        Text(experience.dateRange).font(.caption).monospacedDigit()
+                                            .foregroundStyle(CVeeColors.secondary)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.vertical, 11)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .listRowBackground(CVeeColors.page)
+                            .listRowSeparatorTint(CVeeColors.divider)
+                            .accessibilityHint("Opens this work experience for editing")
+                            .swipeActions { Button("Delete", role: .destructive) { modelContext.delete(experience) } }
+                        }
                     }
+                } header: {
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                            if collapsedCompanies.contains(company) { collapsedCompanies.remove(company) }
+                            else { collapsedCompanies.insert(company) }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: collapsedCompanies.contains(company) ? "chevron.right" : "chevron.down")
+                            Text(company.isEmpty ? "Work history" : company)
+                            Spacer()
+                            Text("\(filteredExperiences.filter { $0.company == company }.count)").monospacedDigit()
+                                .foregroundStyle(CVeeColors.secondary)
+                        }
+                        .font(.caption.weight(.bold)).foregroundStyle(CVeeColors.ink)
+                        .frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).textCase(nil)
+                    .accessibilityValue(collapsedCompanies.contains(company) ? "Collapsed" : "Expanded")
+                    .accessibilityIdentifier("tasks.company-section")
                 }
-                .buttonStyle(.plain)
-                .listRowBackground(CVeeColors.card)
-                .accessibilityHint("Opens this work experience for editing")
             }
-            .onDelete { offsets in offsets.map { filteredExperiences[$0] }.forEach(modelContext.delete) }
         }
+        .listStyle(.plain)
+        .frame(maxWidth: 760)
+        .frame(maxWidth: .infinity)
+        .safeAreaPadding(.bottom, 80)
         .navigationTitle("Tasks")
         .searchable(text: $searchText, prompt: "Search tasks")
         .scrollContentBackground(.hidden)
         .background(CVeeColors.page)
+        .overlay(alignment: .bottomTrailing) {
+            Menu {
+                Button("Add manually") { showingAddTask = true }
+                Button("Import Tasks List") { showingImport = true }
+            } label: {
+                Image(systemName: "plus").font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(CVeeColors.buttonInk)
+                    .frame(width: 56, height: 56)
+                    .background(CVeeColors.coral, in: Circle())
+                    .shadow(color: CVeeColors.coral.opacity(0.45), radius: 10, x: 0, y: 8)
+            }
+            .accessibilityLabel("Add task")
+            .accessibilityHint("Choose whether to add a task manually or import a task list")
+            .accessibilityIdentifier("tasks.add")
+            .padding(.trailing, 18).padding(.bottom, 16)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Menu {
@@ -289,12 +622,9 @@ struct WorkHistoryView: View {
                     ForEach(companies, id: \.self) { company in
                         Button(company) { selectedCompany = company }
                     }
-                } label: {
-                    Label(selectedCompany == "All companies" ? "Filter" : selectedCompany, systemImage: "line.3.horizontal.decrease.circle")
-                }
+                } label: { Label(selectedCompany == "All companies" ? "Filter" : selectedCompany, systemImage: "line.3.horizontal.decrease.circle") }
                 .accessibilityLabel("Filter tasks by company")
             }
-            ToolbarItem(placement: .topBarTrailing) { Menu { Button("Add manually") { showingAddTask = true }; Button("Import Tasks List") { showingImport = true } } label: { Image(systemName: "plus") }.accessibilityLabel("Add task") }
         }
         .sheet(item: $selected) { experience in TaskDetailView(experience: experience) }
         .sheet(isPresented: $showingAddTask) { WorkExperienceEditor(experience: WorkExperience(jobTitle: "", company: "")) }
@@ -364,13 +694,21 @@ struct TaskDetailView: View {
                             do { try modelContext.save(); isEditing = false }
                             catch { saveError = error.localizedDescription }
                         }
+                        .buttonStyle(CoralButtonStyle())
                         .frame(maxWidth: .infinity)
                     } else {
-                        Button("Edit") { isEditing = true }.frame(maxWidth: .infinity)
-                        Button("Delete", role: .destructive) { showingDeleteAlert = true }.frame(maxWidth: .infinity)
+                        Button("Edit") { isEditing = true }
+                            .frame(maxWidth: .infinity)
+                            .tint(CVeeColors.coral)
+                            .accessibilityIdentifier("task.edit")
+                        Button("Delete", role: .destructive) { showingDeleteAlert = true }
+                            .frame(maxWidth: .infinity)
+                            .tint(.red)
+                            .accessibilityIdentifier("task.delete")
                     }
                 }
             }
+            .modifier(WorkspaceSurface())
             .navigationTitle(isEditing ? "Edit Task" : "Task Details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -430,24 +768,23 @@ struct SavedJobsView: View {
     var body: some View {
         List {
             if filteredJobs.isEmpty {
-                ContentUnavailableView("No saved jobs", systemImage: "bookmark", description: Text("Generate a resume from a job listing to keep it here."))
+                ContentUnavailableView("No saved jobs", systemImage: "bookmark", description: Text("Add a job description to tailor your next resume."))
             }
             ForEach(filteredJobs) { job in
                 Button { selectedJob = job } label: {
                     VStack(alignment: .leading, spacing: 5) {
                     Text(job.parsedTitle ?? job.rawText.split(whereSeparator: \.isNewline).first.map(String.init) ?? "Untitled job")
                         .font(.headline)
-                    Text(job.parsedCompany ?? "Job target")
-                        .foregroundStyle(.secondary)
+                    MetadataPill(text: job.parsedCompany ?? "Job target")
                     Text(job.createdAt, style: .date)
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(CVeeColors.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
                 .padding(.vertical, 6)
-                .listRowBackground(Color(uiColor: .systemBackground))
+                .listRowBackground(CVeeColors.page)
                 .accessibilityElement(children: .combine)
                 .accessibilityHint("Opens saved job details")
             }
@@ -456,6 +793,9 @@ struct SavedJobsView: View {
                 do { try modelContext.save() } catch { saveError = error.localizedDescription }
             }
         }
+        .listStyle(.plain)
+        .frame(maxWidth: 760)
+        .frame(maxWidth: .infinity)
         .navigationTitle("Saved Jobs")
         .searchable(text: $searchText, prompt: "Search saved jobs")
         .scrollContentBackground(.hidden)
@@ -529,7 +869,7 @@ struct JobDetailView: View {
                                     Text(resume.name)
                                     Text(resume.updatedAt, style: .date)
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(CVeeColors.secondary)
                                 }
                             }
                             .buttonStyle(.plain)
@@ -556,6 +896,7 @@ struct JobDetailView: View {
                             do { try modelContext.save(); isEditing = false }
                             catch { saveError = error.localizedDescription }
                         }
+                        .buttonStyle(CoralButtonStyle())
                         .frame(maxWidth: .infinity)
                     } else {
                         Button("Edit") { isEditing = true }
@@ -565,6 +906,7 @@ struct JobDetailView: View {
                     }
                 }
             }
+            .modifier(WorkspaceSurface())
             .navigationTitle(isEditing ? "Edit Job" : "Job Details (\(linkedResumes.count))")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -638,10 +980,12 @@ struct AddJobView: View {
                         do { try modelContext.save(); dismiss() }
                         catch { saveError = error.localizedDescription }
                     }
+                    .buttonStyle(CoralButtonStyle())
                     .frame(maxWidth: .infinity)
                     .disabled(!canSave)
                 }
             }
+            .modifier(WorkspaceSurface())
             .navigationTitle("Add Job")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -707,7 +1051,7 @@ struct WorkExperienceEditor: View {
                                 .font(.caption.weight(.semibold))
                         }
                         .disabled(isEnhancing || task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .accessibilityLabel("Enhance task details with Apple Intelligence")
+                        .accessibilityLabel("Enhance task details with AI")
                         .accessibilityIdentifier("task.enhance-ai")
                     }
                 }
@@ -720,10 +1064,13 @@ struct WorkExperienceEditor: View {
                         do { try modelContext.save(); dismiss() }
                         catch { saveError = error.localizedDescription }
                     }
+                    .buttonStyle(CoralButtonStyle())
                     .frame(maxWidth: .infinity)
                     .disabled(jobTitle.trimmingCharacters(in: .whitespaces).isEmpty || company.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("task.save")
                 }
             }
+            .modifier(WorkspaceSurface())
             .navigationTitle(isNew ? "Add task" : "Edit experience")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if isNew { modelContext.delete(experience) }; dismiss() } }
@@ -765,10 +1112,11 @@ struct TaskImportView: View {
             Form {
                 Section("Workplace") { TextField("Job title", text: $jobTitle).accessibilityIdentifier("import.job-title"); TextField("Company", text: $company).accessibilityIdentifier("import.company"); DatePicker("Start date", selection: $startDate, displayedComponents: .date); Toggle("Currently working here", isOn: Binding(get: { endDate == nil }, set: { endDate = $0 ? nil : .now })); if endDate != nil { DatePicker("End date", selection: Binding($endDate)!, displayedComponents: .date) } }
                 if drafts.isEmpty { Section { Button("Choose document") { showingPicker = true }.accessibilityIdentifier("import.choose-document"); if isAnalyzing { ProgressView("Analyzing tasks…") }; if !sourceText.isEmpty && !isAnalyzing { Text("Document loaded. Choose Analyze to preview tasks.").foregroundStyle(.secondary) } } }
-                if !drafts.isEmpty { Section("Preview (\(drafts.filter(\.isSelected).count) selected)") { ForEach($drafts) { $draft in HStack { Button { draft.isSelected.toggle() } label: { Image(systemName: draft.isSelected ? "checkmark.circle.fill" : "circle").foregroundStyle(draft.isSelected ? CVeeColors.blue : .secondary) }.buttonStyle(.plain); TextField("Task or contribution", text: $draft.text, axis: .vertical).lineLimit(2...5) } }; DisclosureGroup("Source document") { Text(sourceText).font(.caption).textSelection(.enabled) } } }
-                if !sourceText.isEmpty && drafts.isEmpty && !isAnalyzing { Section { Button("Analyze with Apple Intelligence") { analyze() }.disabled(isAnalyzing).accessibilityIdentifier("import.analyze") } }
+                if !drafts.isEmpty { Section("Preview (\(drafts.filter(\.isSelected).count) selected)") { ForEach($drafts) { $draft in HStack { Button { draft.isSelected.toggle() } label: { SelectionCircle(isSelected: draft.isSelected).frame(width: 44, height: 44) }.buttonStyle(.plain).accessibilityLabel("Include task in import").accessibilityValue(draft.isSelected ? "Selected" : "Not selected"); TextField("Task or contribution", text: $draft.text, axis: .vertical).lineLimit(2...5) } }; DisclosureGroup("Source document") { Text(sourceText).font(.caption).textSelection(.enabled) } } }
+                if !sourceText.isEmpty && drafts.isEmpty && !isAnalyzing { Section { Button("Analyze with AI") { analyze() }.disabled(isAnalyzing).accessibilityIdentifier("import.analyze") } }
                 if !drafts.isEmpty { Section { Button("Add \(drafts.filter(\.isSelected).count) tasks") { save() }.disabled(!canSave).accessibilityIdentifier("import.save") } }
             }
+            .modifier(WorkspaceSurface())
             .navigationTitle("Import Tasks List").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .fileImporter(isPresented: $showingPicker, allowedContentTypes: [UTType.pdf, .plainText, UTType(filenameExtension: "docx")!]) { result in load(result) }
@@ -874,7 +1222,7 @@ struct NewResumeView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 40).onEnded { value in handleSwipe(value.translation.width) })
+            .gesture(DragGesture(minimumDistance: 40).onEnded { value in handleSwipe(value.translation) })
             navigationBar
         }
         .navigationTitle("Resume Wizard")
@@ -890,24 +1238,22 @@ struct NewResumeView: View {
     }
 
     private var progressHeader: some View {
-        HStack(alignment: .top, spacing: 0) {
-            ForEach(ResumeWizardStep.allCases, id: \.rawValue) { item in
-                VStack(spacing: 3) {
-                    Circle()
-                        .fill(item.rawValue < step.rawValue ? Color.green : item == step ? CVeeColors.blue : Color.secondary.opacity(0.25))
-                        .frame(width: item == step ? 11 : 8, height: item == step ? 11 : 8)
-                    Text(item.title)
-                        .font(.system(size: item == step ? 12 : 9, weight: item == step ? .semibold : .regular))
-                        .foregroundStyle(item == step ? .primary : .secondary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.55)
-                        .frame(maxWidth: .infinity, minHeight: 14)
-                }.frame(maxWidth: .infinity)
-                if item != .generated { Rectangle().fill(item.rawValue < step.rawValue ? Color.green : Color.secondary.opacity(0.2)).frame(height: 2).padding(.bottom, 15) }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(step.title).font(.headline)
+                Spacer()
+                Text("\(step.rawValue + 1) of \(ResumeWizardStep.allCases.count)")
+                    .font(.caption).monospacedDigit().foregroundStyle(CVeeColors.secondary)
+            }
+            HStack(spacing: 4) {
+                ForEach(ResumeWizardStep.allCases, id: \.rawValue) { item in
+                    Rectangle().fill(item.rawValue < step.rawValue ? CVeeColors.green : item == step ? CVeeColors.coral : CVeeColors.divider)
+                        .frame(height: 2)
+                }
             }
         }
-        .padding(.horizontal, 4).padding(.top, 6).padding(.bottom, 4).accessibilityElement(children: .ignore)
+        .padding(.horizontal, 18).padding(.vertical, 12)
+        .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("wizard.progress")
         .accessibilityLabel("Step \(step.rawValue + 1) of \(ResumeWizardStep.allCases.count): \(step.title)")
     }
@@ -917,17 +1263,17 @@ struct NewResumeView: View {
             Section { Picker("Start method", selection: $startMode) { ForEach(ResumeStartMode.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented) }
             if startMode == .fresh {
                 Section("Your identity") {
-                    TextField("Full name", text: $draftName).textContentType(.name).accessibilityIdentifier("wizard.full-name")
-                    TextField("Email", text: $draftEmail).textContentType(.emailAddress).keyboardType(.emailAddress).accessibilityIdentifier("wizard.email")
-                    TextField("Phone", text: $draftPhone).textContentType(.telephoneNumber).keyboardType(.phonePad)
-                    TextField("Location", text: $draftLocation)
-                    TextField("LinkedIn URL", text: $draftLinkedIn).textInputAutocapitalization(.never).keyboardType(.URL)
-                    TextField("GitHub URL", text: $draftGitHub).textInputAutocapitalization(.never).keyboardType(.URL)
-                    TextField("Education", text: $draftEducation)
-                    TextField("Skills & abilities", text: $draftSkills)
-                    TextField("Certifications", text: $draftCertifications)
+                    if !profileIsValid { Text("Full name and email are required.").font(.caption).foregroundStyle(CVeeColors.secondary) }
+                    TextField("Full name", text: $draftName, prompt: Text("Full name").foregroundStyle(CVeeColors.secondary)).textContentType(.name).accessibilityIdentifier("wizard.full-name")
+                    TextField("Email", text: $draftEmail, prompt: Text("Email").foregroundStyle(CVeeColors.secondary)).textContentType(.emailAddress).keyboardType(.emailAddress).accessibilityIdentifier("wizard.email")
+                    TextField("Phone", text: $draftPhone, prompt: Text("Phone").foregroundStyle(CVeeColors.secondary)).textContentType(.telephoneNumber).keyboardType(.phonePad)
+                    TextField("Location", text: $draftLocation, prompt: Text("Location").foregroundStyle(CVeeColors.secondary))
+                    TextField("LinkedIn URL", text: $draftLinkedIn, prompt: Text("LinkedIn URL").foregroundStyle(CVeeColors.secondary)).textInputAutocapitalization(.never).keyboardType(.URL)
+                    TextField("GitHub URL", text: $draftGitHub, prompt: Text("GitHub URL").foregroundStyle(CVeeColors.secondary)).textInputAutocapitalization(.never).keyboardType(.URL)
+                    TextField("Education", text: $draftEducation, prompt: Text("Education").foregroundStyle(CVeeColors.secondary))
+                    TextField("Skills & abilities", text: $draftSkills, prompt: Text("Skills & abilities").foregroundStyle(CVeeColors.secondary))
+                    TextField("Certifications", text: $draftCertifications, prompt: Text("Certifications").foregroundStyle(CVeeColors.secondary))
                 }
-                if !profileIsValid { Text("Full name and email are required.").font(.caption).foregroundStyle(.secondary) }
             } else {
                 Section("Resume baseline") {
                     Button("Upload PDF") { showingFileImporter = true }
@@ -935,7 +1281,7 @@ struct NewResumeView: View {
                     if !baselineText.isEmpty { Text("Baseline ready").font(.caption).foregroundStyle(.secondary) }
                 }
             }
-        }.formStyle(.grouped).accessibilityIdentifier("wizard.start")
+        }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.start")
     }
 
     private var workLibraryPage: some View {
@@ -955,10 +1301,10 @@ struct NewResumeView: View {
             }
             Section("Work Library") {
                 if filteredExperiences.isEmpty { ContentUnavailableView("No matching tasks", systemImage: "checklist") }
-                ForEach(filteredExperiences) { experience in Button { toggleExperience(experience.id) } label: { HStack { VStack(alignment: .leading) { Text(experience.jobTitle).font(.headline); Text(experience.company).foregroundStyle(.secondary); Text(experience.tasks.first ?? "No task details").font(.caption).foregroundStyle(.secondary).lineLimit(2) }; Spacer(); Image(systemName: selectedExperienceIDs.contains(experience.id) ? "checkmark.circle.fill" : "circle").foregroundStyle(selectedExperienceIDs.contains(experience.id) ? CVeeColors.blue : .secondary) } }.buttonStyle(.plain) }
+                ForEach(filteredExperiences) { experience in Button { toggleExperience(experience.id) } label: { HStack { VStack(alignment: .leading) { Text(experience.jobTitle).font(.subheadline.weight(.medium)); MetadataPill(text: experience.company).foregroundStyle(.secondary); Text(experience.tasks.first ?? "No task details").font(.caption).foregroundStyle(.secondary).lineLimit(2) }; Spacer(); SelectionCircle(isSelected: selectedExperienceIDs.contains(experience.id)) } }.buttonStyle(.plain).accessibilityValue(selectedExperienceIDs.contains(experience.id) ? "Selected" : "Not selected") }
                 Menu { Button("Add manually") { taskCountBeforeAdd = experiences.count; showingAddTask = true }; Button("Import Tasks List") { showingImport = true } } label: { Label("Add task", systemImage: "plus") }
             }
-        }.formStyle(.grouped).accessibilityIdentifier("wizard.work-library")
+        }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.work-library")
     }
 
     private var jobDescriptionPage: some View {
@@ -966,10 +1312,10 @@ struct NewResumeView: View {
             Section { TextField("Search saved jobs", text: $jobSearch).textInputAutocapitalization(.never) }
             Section("Job descriptions") {
                 if filteredJobs.isEmpty { ContentUnavailableView("No saved jobs", systemImage: "briefcase", description: Text("Add a job description to continue.")) }
-                ForEach(filteredJobs) { job in Button { selectedJobID = job.id } label: { HStack { VStack(alignment: .leading) { Text(job.parsedTitle ?? "Untitled job").font(.headline); Text(job.parsedCompany ?? "Unknown company").foregroundStyle(.secondary); Text(job.rawText).font(.caption).foregroundStyle(.secondary).lineLimit(3) }; Spacer(); Image(systemName: selectedJobID == job.id ? "checkmark.circle.fill" : "circle").foregroundStyle(selectedJobID == job.id ? CVeeColors.blue : .secondary) } }.buttonStyle(.plain) }
+                ForEach(filteredJobs) { job in Button { selectedJobID = job.id } label: { HStack { VStack(alignment: .leading) { Text(job.parsedTitle ?? "Untitled job").font(.headline); Text(job.parsedCompany ?? "Unknown company").foregroundStyle(.secondary); Text(job.rawText).font(.caption).foregroundStyle(.secondary).lineLimit(3) }; Spacer(); SelectionCircle(isSelected: selectedJobID == job.id) } }.buttonStyle(.plain).accessibilityValue(selectedJobID == job.id ? "Selected" : "Not selected") }
                 Button { jobCountBeforeAdd = jobs.count; showingAddJob = true } label: { Label("Add job", systemImage: "plus") }
             }
-        }.formStyle(.grouped).accessibilityIdentifier("wizard.job-description")
+        }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.job-description")
     }
 
     private var summaryPage: some View {
@@ -979,7 +1325,7 @@ struct NewResumeView: View {
             if let selectedJob { Section("Job description") { Text(selectedJob.rawText).lineLimit(8) } }
             if isLoading { Section { ProgressView("Generating your resume…").accessibilityIdentifier("wizard.loader") } }
             if let errorMessage { Section { Text(errorMessage).foregroundStyle(.red) } }
-        }.formStyle(.grouped).accessibilityIdentifier("wizard.summary")
+        }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.summary")
     }
 
     private var generatedPage: some View {
@@ -1016,7 +1362,7 @@ struct NewResumeView: View {
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("wizard.edit-resume")
                     Button(isSaved ? "Saved to Resumes" : "Save Resume") { saveGeneratedResume() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(CoralButtonStyle())
                         .disabled(isSaved || generatedDraft == nil)
                         .frame(maxWidth: .infinity)
                         .accessibilityIdentifier("wizard.save-resume")
@@ -1030,7 +1376,7 @@ struct NewResumeView: View {
     }
 
     private var navigationBar: some View {
-        HStack { if step != .start { Button("Back") { moveBack() }.accessibilityIdentifier("wizard.back") }; Spacer(); if step == .summary { Button(isLoading ? "Generating…" : "Generate Resume") { Task { await generate() } }.buttonStyle(.borderedProminent).disabled(!canAdvance).accessibilityIdentifier("wizard.generate") } else if step != .generated { Button("Next") { advance() }.buttonStyle(.borderedProminent).disabled(!canAdvance).accessibilityIdentifier("wizard.next") } }.padding(.horizontal).padding(.vertical, 10).background(.bar)
+        HStack { if step != .start { Button("Back") { moveBack() }.accessibilityIdentifier("wizard.back") }; Spacer(); if step == .summary { Button(isLoading ? "Generating…" : "Generate Resume") { Task { await generate() } }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.generate") } else if step != .generated { Button("Next") { advance() }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.next") } }.padding(.horizontal).padding(.vertical, 10).background(.bar)
     }
 
     private func loadProfileDraft() { draftName = profileName; draftEmail = profileEmail; draftPhone = profilePhone; draftLocation = profileLocation; draftLinkedIn = profileLinkedIn; draftGitHub = profileGitHub; draftEducation = profileEducation; draftSkills = profileSkills; draftCertifications = profileCertifications }
@@ -1039,9 +1385,18 @@ struct NewResumeView: View {
     private func clearSelectedExperiences() { selectedExperienceIDs.removeAll() }
     private func advance() { if step == .start, startMode == .fresh { profileName = draftName; profileEmail = draftEmail; profilePhone = draftPhone; profileLocation = draftLocation; profileLinkedIn = draftLinkedIn; profileGitHub = draftGitHub; profileEducation = draftEducation; profileSkills = draftSkills; profileCertifications = draftCertifications }; generatedDraft = nil; generatedText = ""; generatedLaTeX = ""; generatedEditorMode = .formatted; isEditingGenerated = false; isSaved = false; errorMessage = nil; step = ResumeWizardStep(rawValue: step.rawValue + 1)! }
     private func moveBack() { step = ResumeWizardStep(rawValue: step.rawValue - 1)!; generatedDraft = nil; generatedText = ""; generatedLaTeX = ""; generatedEditorMode = .formatted; isEditingGenerated = false; isSaved = false; errorMessage = nil }
-    private func handleSwipe(_ width: CGFloat) { if abs(width) < 40 { return }; if width < 0 { if step != .start { moveBack() } } else if step != .summary && step != .generated, canAdvance { advance() } }
+    private func handleSwipe(_ translation: CGSize) {
+        let horizontal = abs(translation.width)
+        let vertical = abs(translation.height)
+        guard horizontal >= 40, horizontal > vertical * 1.25 else { return }
+        if translation.width < 0 {
+            if step != .start { moveBack() }
+        } else if step != .summary && step != .generated, canAdvance {
+            advance()
+        }
+    }
     private func importPDF(_ result: Result<URL, Error>) { do { let url = try result.get(); let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }; guard let text = PDFDocument(url: url)?.string?.trimmingCharacters(in: .whitespacesAndNewlines), text.count > 40 else { errorMessage = "This PDF has no readable text. Choose a text-based PDF."; return }; baselineText = text; selectedResumeID = nil } catch { errorMessage = "The PDF could not be opened. Choose another file." } }
-    private func generate() async { isLoading = true; errorMessage = nil; generatedDraft = nil; if ProcessInfo.processInfo.arguments.contains("-resume-format-fixture") { generatedDraft = ResumeDraft(name: "Andrei Hidalgo — Full Stack AI Developer", summary: "AI developer focused on reliable, user-centered software.", experience: selectedExperiences.map { ($0.jobTitle, $0.tasks) }, skills: ["SwiftUI", "SwiftData", "Python"]); generatedText = JakesResumeTemplate().render(draft: generatedDraft!).string; isEditingGenerated = false; step = .generated; isLoading = false; return }; let availability = FoundationModelsAvailability().state(); guard availability == .ready else { if case .unavailable(let message) = availability { errorMessage = message }; isLoading = false; return }; do { generatedDraft = try await ResumeGenerationService().generate(jobText: selectedJob?.rawText ?? "", work: selectedExperiences, profileName: draftName, profileText: profileText, baselineText: baselineText.isEmpty ? nil : baselineText); generatedText = generatedDraft?.rawText.isEmpty == false ? generatedDraft?.rawText ?? "" : generatedDraft.map { JakesResumeTemplate().render(draft: $0).string } ?? ""; isEditingGenerated = false; step = .generated } catch { errorMessage = error.localizedDescription }; isLoading = false }
+    private func generate() async { isLoading = true; errorMessage = nil; generatedDraft = nil; if ProcessInfo.processInfo.arguments.contains("-resume-format-fixture") { generatedDraft = ResumeDraft(name: "Andrei Hidalgo — Full Stack AI Developer", summary: "AI developer focused on reliable, user-centered software.", experience: selectedExperiences.map { ($0.jobTitle, $0.tasks) }, skills: ["SwiftUI", "SwiftData", "Python"]); generatedText = JakesResumeTemplate().render(draft: generatedDraft!).string; isEditingGenerated = false; step = .generated; isLoading = false; return }; do { generatedDraft = try await ResumeGenerationService().generate(jobText: selectedJob?.rawText ?? "", work: selectedExperiences, profileName: draftName, profileText: profileText, baselineText: baselineText.isEmpty ? nil : baselineText); generatedText = generatedDraft?.rawText.isEmpty == false ? generatedDraft?.rawText ?? "" : generatedDraft.map { JakesResumeTemplate().render(draft: $0).string } ?? ""; isEditingGenerated = false; step = .generated } catch { errorMessage = error.localizedDescription }; isLoading = false }
     private var profileText: String { [draftName, draftEmail, draftPhone, draftLocation, draftLinkedIn, draftGitHub, draftEducation, draftSkills, draftCertifications].joined(separator: "\n") }
     private func saveGeneratedResume() { guard let generatedDraft, let selectedJob else { return }; let resume = Resume(name: generatedDraft.name, jobTarget: selectedJob, workExperienceIDs: Array(selectedExperienceIDs), sections: [ResumeSection(kind: .summary, order: 0, title: "Resume", attributedText: ResumeTextFormatter.format(generatedText))]); modelContext.insert(resume); do { try modelContext.save(); isSaved = true; onSaved() } catch { errorMessage = error.localizedDescription } }
 }
@@ -1051,12 +1406,15 @@ struct ResumesView: View {
     @Query(sort: \Resume.updatedAt, order: .reverse) private var resumes: [Resume]
     var body: some View {
         List {
-            if resumes.isEmpty { ContentUnavailableView("No saved resumes", systemImage: "doc.text", description: Text("Create your first tailored resume from the New resume tab.")) }
+            if resumes.isEmpty { ContentUnavailableView("No saved resumes", systemImage: "doc.text", description: Text("Create your first tailored resume from the Resume Wizard tab.")) }
             ForEach(resumes) { resume in
-                NavigationLink { ResumeEditorView(resume: resume) } label: { VStack(alignment: .leading, spacing: 4) { Text(resume.name).font(.headline); Text(resume.jobTarget?.parsedTitle ?? resume.jobTarget?.rawText.prefix(70).description ?? "Saved draft").font(.subheadline).foregroundStyle(.secondary); Text(resume.updatedAt, style: .date).font(.caption).foregroundStyle(.tertiary) } }.accessibilityIdentifier("resume.saved-row")
-                    .listRowBackground(Color(uiColor: .systemBackground))
+                NavigationLink { ResumeEditorView(resume: resume) } label: { VStack(alignment: .leading, spacing: 4) { Text(resume.name).font(.headline); Text(resume.jobTarget?.parsedTitle ?? resume.jobTarget?.rawText.prefix(70).description ?? "Saved draft").font(.subheadline).foregroundStyle(.secondary); Text(resume.updatedAt, style: .date).font(.caption).foregroundStyle(CVeeColors.secondary) } }.accessibilityIdentifier("resume.saved-row")
+                    .listRowBackground(CVeeColors.page)
             }.onDelete { offsets in offsets.map { resumes[$0] }.forEach(modelContext.delete) }
         }
+        .listStyle(.plain)
+        .frame(maxWidth: 760)
+        .frame(maxWidth: .infinity)
         .navigationTitle("Resumes")
         .scrollContentBackground(.hidden)
         .background(CVeeColors.page)
@@ -1098,7 +1456,7 @@ struct ResumeEditorView: View {
                 }
             } else { ContentUnavailableView("Resume is empty", systemImage: "doc.text") }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(CVeeColors.card)
         .navigationTitle(resume.name).navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if let section = resume.sections.sorted(by: { $0.order < $1.order }).first { latexText = ResumeLaTeXFormatter.source(from: section.attributedText) }
@@ -1132,7 +1490,7 @@ struct ResumePreviewView: View {
         ScrollView {
             ResumePagePreview(pdfData: ResumeExportService().pdfData(for: resume))
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(CVeeColors.card)
         .navigationTitle(resume.name)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -1144,7 +1502,7 @@ struct ResumePagePreview: View {
     var body: some View {
         ResumePDFView(pdfData: pdfData)
             .aspectRatio(612.0 / 792.0, contentMode: .fit)
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(CVeeColors.card)
             .accessibilityIdentifier("wizard.generated.pdf")
     }
 }

@@ -1,0 +1,328 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-05T08:52:32.246224+00:00",
+  "title": "Design System: CVee",
+  "extensions": {
+    "colorMeta": {
+      "coral": {
+        "displayName": "Coral",
+        "role": "primary",
+        "tonalRamp": [
+          "oklch(15% 0.13 25)",
+          "oklch(26% 0.13 25)",
+          "oklch(38% 0.13 25)",
+          "oklch(49% 0.13 25)",
+          "oklch(61% 0.13 25)",
+          "oklch(72% 0.13 25)",
+          "oklch(84% 0.13 25)",
+          "oklch(95% 0.13 25)"
+        ]
+      },
+      "page-light": {
+        "displayName": "Page Light",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "page-dark": {
+        "displayName": "Page Dark",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "surface-light": {
+        "displayName": "Surface Light",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "surface-dark": {
+        "displayName": "Surface Dark",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "divider-light": {
+        "displayName": "Divider Light",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "divider-dark": {
+        "displayName": "Divider Dark",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "ink-light": {
+        "displayName": "Ink Light",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "ink-dark": {
+        "displayName": "Ink Dark",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "secondary-light": {
+        "displayName": "Secondary Light",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "secondary-dark": {
+        "displayName": "Secondary Dark",
+        "role": "neutral",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "success": {
+        "displayName": "Success",
+        "role": "secondary",
+        "tonalRamp": [
+          "oklch(15% 0.14 145)",
+          "oklch(26% 0.14 145)",
+          "oklch(38% 0.14 145)",
+          "oklch(49% 0.14 145)",
+          "oklch(61% 0.14 145)",
+          "oklch(72% 0.14 145)",
+          "oklch(84% 0.14 145)",
+          "oklch(95% 0.14 145)"
+        ]
+      },
+      "object-ink-light": {
+        "displayName": "Object Ink Light",
+        "role": "secondary",
+        "tonalRamp": [
+          "oklch(15% 0.1 260)",
+          "oklch(26% 0.1 260)",
+          "oklch(38% 0.1 260)",
+          "oklch(49% 0.1 260)",
+          "oklch(61% 0.1 260)",
+          "oklch(72% 0.1 260)",
+          "oklch(84% 0.1 260)",
+          "oklch(95% 0.1 260)"
+        ]
+      },
+      "object-ink-dark": {
+        "displayName": "Object Ink Dark",
+        "role": "secondary",
+        "tonalRamp": [
+          "oklch(15% 0.1 260)",
+          "oklch(26% 0.1 260)",
+          "oklch(38% 0.1 260)",
+          "oklch(49% 0.1 260)",
+          "oklch(61% 0.1 260)",
+          "oklch(72% 0.1 260)",
+          "oklch(84% 0.1 260)",
+          "oklch(95% 0.1 260)"
+        ]
+      },
+      "object-tint": {
+        "displayName": "Object Tint",
+        "role": "secondary",
+        "tonalRamp": [
+          "oklch(15% 0.1 260)",
+          "oklch(26% 0.1 260)",
+          "oklch(38% 0.1 260)",
+          "oklch(49% 0.1 260)",
+          "oklch(61% 0.1 260)",
+          "oklch(72% 0.1 260)",
+          "oklch(84% 0.1 260)",
+          "oklch(95% 0.1 260)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "body": {
+        "displayName": "Native Body",
+        "purpose": "Semantic SwiftUI body styles; sizes scale with Dynamic Type."
+      },
+      "row": {
+        "displayName": "Experience Title",
+        "purpose": "Medium subheadline for scannable roles."
+      },
+      "label": {
+        "displayName": "Metadata and Actions",
+        "purpose": "Semibold native caption or subheadline."
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating-add",
+        "value": "SwiftUI color coral.opacity(0.45), radius: 10, x: 0, y: 8",
+        "purpose": "Only custom shadow; floating create menu."
+      }
+    ],
+    "motion": [
+      {
+        "name": "selection-and-collapse",
+        "value": "easeOut 0.2s; selected circle scale 1.05",
+        "purpose": "Selection and company disclosure, disabled under Reduce Motion."
+      }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "description": "Portable illustration of CoralButtonStyle; native focus is platform-owned.",
+      "html": "<button class=\"ds-primary\">Next</button>",
+      "css": ".ds-primary{font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:15px;font-weight:600;background:#F06A6A;color:#1E1F21;border:0;border-radius:8px;padding:13px 26px;min-height:44px}.ds-primary:hover,.ds-primary:active{background:rgba(240,106,106,.8)}.ds-primary:focus-visible{outline:2px solid #2855A2;outline-offset:3px}.ds-primary:disabled{background:rgba(240,106,106,.4)}",
+      "refersTo": "button-primary"
+    },
+    {
+      "name": "Add Action",
+      "kind": "button",
+      "description": "Native menu opens add manually and import actions. Browser shadow approximates SwiftUI radius.",
+      "html": "<button class=\"ds-add\" aria-label=\"Add task\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3v18M3 12h18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\"/></svg></button>",
+      "css": ".ds-add{width:56px;height:56px;border:0;border-radius:50%;background:#F06A6A;color:#1E1F21;box-shadow:0 8px 20px rgba(240,106,106,.45);display:grid;place-items:center}.ds-add:hover,.ds-add:active{opacity:.8}.ds-add:focus-visible{outline:2px solid #2855A2;outline-offset:3px}",
+      "refersTo": "add-action"
+    },
+    {
+      "name": "Metadata Pill",
+      "kind": "chip",
+      "description": "Static company metadata with a soft object tint.",
+      "html": "<span class=\"ds-pill\">Acme Studio</span>",
+      "css": ".ds-pill{font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:rgba(69,115,210,.16);color:#2855A2}",
+      "refersTo": "metadata-pill"
+    },
+    {
+      "name": "Native Form Field",
+      "kind": "input",
+      "description": "Illustrative native form row; browser focus is a preview affordance, not a new iOS token.",
+      "html": "<label class=\"ds-field\">Full name<input value=\"Andrei Hidalgo\" /></label>",
+      "css": ".ds-field{font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;gap:16px;padding:12px;background:#F9F8F8;color:#1E1F21}.ds-field input{font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:16px;min-width:0;border:0;background:transparent;color:#1E1F21}.ds-field input:hover{background:#FFFFFF}.ds-field input:focus-visible{outline:2px solid #2855A2;outline-offset:2px}"
+    },
+    {
+      "name": "Workspace Navigation",
+      "kind": "nav",
+      "description": "Label-only illustration of the five native tabs; system SF icons and tab metrics are not recreated.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Workspace\"><button aria-current=\"page\">Tasks</button><button>Saved Jobs</button><button>Resume Wizard</button><button>Resumes</button><button>Profile</button></nav>",
+      "css": ".ds-nav{display:flex;background:#FFFFFF;border-top:1px solid #EDEBE9}.ds-nav button{font-family:-apple-system,BlinkMacSystemFont,sans-serif;flex:1;min-height:44px;border:0;background:transparent;font-size:10px;color:#6D6E6F}.ds-nav [aria-current]{color:#F06A6A}.ds-nav button:hover{background:#F9F8F8}.ds-nav button:focus-visible{outline:2px solid #2855A2;outline-offset:-2px}"
+    },
+    {
+      "name": "Grouped Surface",
+      "kind": "card",
+      "description": "Tonal container illustration; native Form controls own actual grouping and inset metrics.",
+      "html": "<section class=\"ds-surface\"><strong>Identity</strong><p>Personal details for your resume.</p></section>",
+      "css": ".ds-surface{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F9F8F8;color:#1E1F21;padding:16px}.ds-surface p{color:#6D6E6F;margin-bottom:0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Reusable Experience Library",
+    "overview": "A calm, structured library of reusable experience: warm coral actions sit on white or charcoal, while flat rows and quiet metadata keep work history easy to scan. The supplied Asana reference sets the visual language; CVee keeps its own resume workflows.\n\nNative SF typography, native navigation, and adaptive semantic colors make the system feel at home on iOS. Small object tints support recognition without competing with the content.",
+    "keyCharacteristics": [
+      "Coral actions on white and charcoal.",
+      "Flat lists with company grouping and tinted metadata.",
+      "Native typography, navigation, and accessible selection."
+    ],
+    "rules": [
+      {
+        "name": "The Accent Rule",
+        "body": "Keep coral focused on actions and active state; use object tint only for compact metadata.",
+        "section": "colors"
+      },
+      {
+        "name": "The Flat List Rule",
+        "body": "Use separators and spacing for list hierarchy; reserve the custom shadow for the floating add action.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do reuse the shared adaptive colors and existing SwiftUI components.",
+      "Do use native semantic type styles and allow content to grow with Dynamic Type.",
+      "Do keep selection state available as text to assistive technology.",
+      "Do preserve readable foregrounds on coral and pale object tints."
+    ],
+    "donts": [
+      "Don't add boards, inboxes, assignees, completion workflows, or other Asana features from the visual reference.",
+      "Don't replace the charcoal dark canvas with pure black.",
+      "Don't add shadows to ordinary list rows or turn metadata into heavy color slabs.",
+      "Don't replace adaptive secondary wizard prompts with pale defaults or exceed the centered 760-point content limit."
+    ]
+  }
+}

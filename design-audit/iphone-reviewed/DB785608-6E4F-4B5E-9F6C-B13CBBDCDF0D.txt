@@ -1,0 +1,50 @@
+Failed to get matching snapshot: Find single matching element. Multiple matching elements found for <XCUIElementQuery: 0x10850bed0>.
+Sparse tree of matches:
+→Application, pid: 73588, label: 'CVee-resumebuilder'
+  ↳Window (Main)
+    ↳Other
+    ⋅ ↳Other
+    ⋅   ↳Other
+    ⋅     ↳Other
+    ⋅       ↳Other
+    ⋅         ↳Other
+    ⋅           ↳Other
+    ⋅             ↳Other
+    ⋅               ↳Other
+    ⋅                 ↳Other
+    ⋅                   ↳Other
+    ⋅                     ↳CollectionView
+    ⋅                       ↳Cell
+    ⋅                         ↳Other
+    ⋅                           ↳Other
+    ⋅                             ↳Other
+    ⋅                               ↳Button, label: 'Clear all data', Disabled
+    ↳Other
+      ↳Other
+        ↳Other
+          ↳Other
+            ↳Other
+              ↳Other
+                ↳Other
+                  ↳Other
+                    ↳Other
+                      ↳Other
+                        ↳Other
+                          ↳Other
+                            ↳Other
+                              ↳Other
+                                ↳Other
+                                  ↳CollectionView
+                                    ↳Cell
+                                      ↳Other
+                                        ↳Other
+                                          ↳Other
+                                            ↳Button, label: 'Clear all data'
+Possibly caused by runtime issues:
+Automation type mismatch: computed Button from legacy attributes vs Link from modern attribute. Input attributes and values: {
+    "XC_kAXXCAttributeAutomationType" = 42;
+    "XC_kAXXCAttributeElementBaseType" = UIResponder;
+    "XC_kAXXCAttributeElementType" = "SwiftUI.AccessibilityNode";
+    "XC_kAXXCAttributeTraits" = 8589934595;
+}
+See test report attachments for more detail.

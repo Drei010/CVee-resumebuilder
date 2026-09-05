@@ -1,0 +1,57 @@
+Failed to tap "Add task" Button: Find single matching element. Multiple matching elements found for <XCUIElementQuery: 0x1032595e0>.
+Sparse tree of matches:
+→Application, pid: 72336, label: 'CVee-resumebuilder'
+  ↳Window (Main)
+    ↳Other
+    ⋅ ↳Other
+    ⋅   ↳Other
+    ⋅     ↳Other
+    ⋅       ↳Other
+    ⋅         ↳Other
+    ⋅           ↳Other
+    ⋅             ↳Other
+    ⋅               ↳Other
+    ⋅                 ↳Other
+    ⋅                   ↳Other, identifier: 'tab.tasks'
+    ⋅                     ↳Other
+    ⋅                       ↳Other
+    ⋅                         ↳Other
+    ⋅                           ↳Other
+    ⋅                             ↳Button, identifier: 'tasks.add', label: 'Add task'
+    ↳Other
+      ↳Other
+        ↳Other
+          ↳Other
+            ↳Other
+              ↳Other
+                ↳Other
+                  ↳Other
+                    ↳Other
+                      ↳Other
+                        ↳Other
+                          ↳CollectionView
+                            ↳Cell
+                              ↳Other
+                                ↳Other
+                                  ↳Other
+                                    ↳Button, label: 'Add task'
+Possibly caused by runtime issues:
+Automation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {
+    "XC_kAXXCAttributeAutomationType" = 14;
+    "XC_kAXXCAttributeElementBaseType" = UIResponder;
+    "XC_kAXXCAttributeElementType" = "SwiftUI.AccessibilityNode";
+    "XC_kAXXCAttributeTraits" = 1108101562369;
+}
+Automation type mismatch: computed Button from legacy attributes vs Key from modern attribute. Input attributes and values: {
+    "XC_kAXXCAttributeAutomationType" = 20;
+    "XC_kAXXCAttributeElementBaseType" = UIAccessibilityElement;
+    "XC_kAXXCAttributeElementType" = UIAccessibilityElementKBKey;
+    "XC_kAXXCAttributeTraits" = 8589934649;
+}
+Automation type mismatch: computed Button from legacy attributes vs Key from modern attribute. Input attributes and values: {
+    "XC_kAXXCAttributeAutomationType" = 20;
+    "XC_kAXXCAttributeElementBaseType" = UIAccessibilityElement;
+    "XC_kAXXCAttributeElementType" = UIAccessibilityElementKBKey;
+    "XC_kAXXCAttributeTraits" = 8589934641;
+}
+See test report attachments for more detail.
