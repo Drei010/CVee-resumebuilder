@@ -87,6 +87,8 @@ private struct SelectionCircle: View {
 }
 
 struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab = 0
 
     var body: some View {
@@ -114,6 +116,13 @@ struct ContentView: View {
         .scrollContentBackground(.hidden)
         .background(CVeeColors.page)
         .toolbarBackground(CVeeColors.page, for: .tabBar, .navigationBar)
+        .task { importPendingCaptures() }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { importPendingCaptures() } }
+    }
+
+    private func importPendingCaptures() {
+        do { _ = try JobCaptureStore().importPendingPackages(in: modelContext) }
+        catch { /* Captures remain in the inbox and can be retried on the next launch. */ }
     }
 }
 
@@ -186,6 +195,8 @@ struct ProfileView: View {
         (try? modelContext.fetch(FetchDescriptor<ResumeSection>()))?.forEach(modelContext.delete)
         (try? modelContext.fetch(FetchDescriptor<Resume>()))?.forEach(modelContext.delete)
         try? modelContext.save()
+        JobCaptureStore().removeAll()
+        JobCaptureDraftStore.clear()
         name = "Andrei Hidalgo"; email = ""; phone = ""; location = ""; linkedin = ""; github = ""; education = ""; skills = ""; certifications = ""
         AIProviderSelection().clear()
     }
@@ -774,27 +785,19 @@ struct SavedJobsView: View {
             if filteredJobs.isEmpty {
                 ContentUnavailableView("No saved jobs", systemImage: "bookmark", description: Text("Add a job description to tailor your next resume."))
             }
-            ForEach(filteredJobs) { job in
-                Button { selectedJob = job } label: {
-                    VStack(alignment: .leading, spacing: 5) {
-                    Text(job.parsedTitle ?? job.rawText.split(whereSeparator: \.isNewline).first.map(String.init) ?? "Untitled job")
-                        .font(.headline)
-                    MetadataPill(text: job.parsedCompany ?? "Job target")
-                    Text(job.createdAt, style: .date)
-                        .font(.caption)
-                        .foregroundStyle(CVeeColors.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            let captured = filteredJobs.filter { $0.captureID != nil }
+            let saved = filteredJobs.filter { $0.captureID == nil }
+            if !captured.isEmpty {
+                Section("Captured jobs") {
+                    ForEach(captured) { jobRow($0) }
+                        .onDelete { delete($0, from: captured) }
                 }
-                .buttonStyle(.plain)
-                .padding(.vertical, 6)
-                .listRowBackground(CVeeColors.page)
-                .accessibilityElement(children: .combine)
-                .accessibilityHint("Opens saved job details")
             }
-            .onDelete { offsets in
-                offsets.map { filteredJobs[$0] }.forEach(modelContext.delete)
-                do { try modelContext.save() } catch { saveError = error.localizedDescription }
+            if !saved.isEmpty {
+                Section("Saved jobs") {
+                    ForEach(saved) { jobRow($0) }
+                        .onDelete { delete($0, from: saved) }
+                }
             }
         }
         .listStyle(.plain)
@@ -812,9 +815,46 @@ struct SavedJobsView: View {
         }
         .sheet(isPresented: $showingAddJob) { AddJobView() }
         .sheet(item: $selectedJob) { job in JobDetailView(job: job, onOpenTasks: onOpenTasks) }
+        .onReceive(NotificationCenter.default.publisher(for: .cveeOpenJob)) { note in
+            if let id = note.object as? UUID { selectedJob = jobs.first { $0.id == id } }
+        }
         .alert("Couldn’t save changes", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button("OK", role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "Try again.") }
+    }
+
+    private func jobStatus(for job: JobTarget) -> String {
+        if !job.hasDescription { return "Needs description" }
+        if job.captureReviewState == .needsReview { return "Needs review" }
+        return "Ready for resume"
+    }
+
+    @ViewBuilder
+    private func jobRow(_ job: JobTarget) -> some View {
+        Button { selectedJob = job } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(job.displayTitle).font(.headline)
+                MetadataPill(text: job.displayCompany)
+                Text(jobStatus(for: job))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(job.isUsableForResume ? CVeeColors.green : CVeeColors.secondary)
+                Text(job.createdAt, style: .date).font(.caption).foregroundStyle(CVeeColors.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 6)
+        .listRowBackground(CVeeColors.page)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens saved job details")
+    }
+
+    private func delete(_ offsets: IndexSet, from source: [JobTarget]) {
+        offsets.map { source[$0] }.forEach {
+            JobCaptureStore().removeAttachments(for: $0)
+            modelContext.delete($0)
+        }
+        do { try modelContext.save() } catch { saveError = error.localizedDescription }
     }
 }
 
@@ -828,8 +868,12 @@ struct JobDetailView: View {
     @State private var selectedResume: Resume?
     @State private var name: String
     @State private var company: String
+    @State private var sourceURL: String
     @State private var description: String
     @State private var saveError: String?
+    @State private var fetchedDescription: String?
+    @State private var isFetching = false
+    @State private var isExtracting = false
     let onOpenTasks: () -> Void
 
     init(job: JobTarget, onOpenTasks: @escaping () -> Void = {}) {
@@ -837,6 +881,7 @@ struct JobDetailView: View {
         self.onOpenTasks = onOpenTasks
         _name = State(initialValue: job.parsedTitle ?? "")
         _company = State(initialValue: job.parsedCompany ?? "")
+        _sourceURL = State(initialValue: job.sourceURL ?? job.linkedInURL ?? "")
         _description = State(initialValue: job.rawText)
     }
 
@@ -851,15 +896,24 @@ struct JobDetailView: View {
                     if isEditing {
                         TextField("Name of the job", text: $name)
                         TextField("Company of the job", text: $company)
+                        TextField("Source URL (optional)", text: $sourceURL)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.URL)
                         TextEditor(text: $description)
                             .frame(minHeight: 220)
                             .accessibilityLabel("Job description")
                     } else {
                         LabeledContent("Job", value: job.parsedTitle ?? "Untitled job")
-                        LabeledContent("Company", value: job.parsedCompany ?? "Job target")
+                        LabeledContent("Company", value: job.displayCompany)
+                        if let sourceURL = job.sourceURL, !sourceURL.isEmpty { Link(destination: URL(string: sourceURL) ?? URL(string: "https://example.com")!) { Label(sourceURL, systemImage: "link") }.lineLimit(1) }
+                        Label(jobStatus(for: job), systemImage: job.isUsableForResume ? "checkmark.circle" : "exclamationmark.circle")
+                            .foregroundStyle(job.isUsableForResume ? CVeeColors.green : CVeeColors.secondary)
                         Text(job.rawText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
+                        if !job.attachments.isEmpty {
+                            ForEach(job.attachments) { attachment in Label(attachment.displayName, systemImage: "paperclip").font(.caption).foregroundStyle(.secondary) }
+                        }
                     }
                 }
                 Section("Linked saved resumes (\(linkedResumes.count))") {
@@ -881,6 +935,22 @@ struct JobDetailView: View {
                     }
                 }
                 Section {
+                    if !job.hasDescription && !job.attachments.isEmpty {
+                        if isExtracting { ProgressView("Extracting locally…") }
+                        else { Button("Extract description locally") { extractAttachments() } }
+                    }
+                    if !job.isUsableForResume {
+                        Button("Mark reviewed") {
+                            job.captureReviewState = job.hasDescription ? .reviewed : .needsReview
+                            do { try modelContext.save() } catch { saveError = error.localizedDescription }
+                        }
+                        .disabled(!job.hasDescription)
+                        .accessibilityHint("Confirms the local job description for resume generation")
+                    }
+                    if job.sourceURL?.isEmpty == false {
+                        if isFetching { ProgressView("Fetching description…") }
+                        else { Button("Fetch description") { fetchDescription() }.accessibilityHint("Loads a proposed description from the saved URL") }
+                    }
                     Button {
                         dismiss()
                         onOpenTasks()
@@ -897,6 +967,8 @@ struct JobDetailView: View {
                             job.parsedTitle = name
                             job.parsedCompany = company
                             job.rawText = description
+                            job.sourceURL = sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : sourceURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                            job.captureReviewState = job.hasDescription ? .reviewed : .needsReview
                             do { try modelContext.save(); isEditing = false }
                             catch { saveError = error.localizedDescription }
                         }
@@ -919,6 +991,7 @@ struct JobDetailView: View {
                         if isEditing {
                             name = job.parsedTitle ?? ""
                             company = job.parsedCompany ?? ""
+                            sourceURL = job.sourceURL ?? job.linkedInURL ?? ""
                             description = job.rawText
                             isEditing = false
                         } else { dismiss() }
@@ -927,6 +1000,7 @@ struct JobDetailView: View {
             }
             .alert("Confirm delete", isPresented: $showingDeleteAlert) {
                 Button("Delete", role: .destructive) {
+                    JobCaptureStore().removeAttachments(for: job)
                     modelContext.delete(job)
                     do { try modelContext.save(); dismiss() }
                     catch { saveError = error.localizedDescription }
@@ -938,8 +1012,54 @@ struct JobDetailView: View {
             .alert("Couldn’t save changes", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
                 Button("OK", role: .cancel) { saveError = nil }
             } message: { Text(saveError ?? "Try again.") }
+            .confirmationDialog("Use fetched description?", isPresented: Binding(get: { fetchedDescription != nil }, set: { if !$0 { fetchedDescription = nil } }), titleVisibility: .visible) {
+                Button("Use description") {
+                    if let fetchedDescription { description = fetchedDescription; isEditing = true; self.fetchedDescription = nil }
+                }
+                Button("Cancel", role: .cancel) { fetchedDescription = nil }
+            } message: {
+                Text("The fetched content is a proposed update. Review it before saving.")
+            }
             .sheet(item: $selectedResume) { resume in
                 ResumeEditorView(resume: resume)
+            }
+        }
+    }
+
+    private func jobStatus(for job: JobTarget) -> String {
+        if !job.hasDescription { return "Needs description" }
+        if job.captureReviewState == .needsReview { return "Needs review" }
+        return "Ready for resume"
+    }
+
+    private func fetchDescription() {
+        guard let sourceURL = job.sourceURL, !sourceURL.isEmpty else { return }
+        isFetching = true
+        Task {
+            do {
+                let result = try await JobDescriptionFetcher().fetch(urlString: sourceURL)
+                await MainActor.run {
+                    if name.isEmpty { name = result.title ?? "" }
+                    if company.isEmpty { company = result.company ?? "" }
+                    fetchedDescription = result.text
+                    isFetching = false
+                }
+            } catch {
+                await MainActor.run { saveError = error.localizedDescription; isFetching = false }
+            }
+        }
+    }
+
+    private func extractAttachments() {
+        let store = JobCaptureStore()
+        let urls = job.attachments.map { store.fileURL(for: $0) }
+        isExtracting = true
+        Task {
+            do {
+                let text = try await JobCaptureExtractor().extract(urls: urls)
+                await MainActor.run { description = text; isEditing = true; isExtracting = false }
+            } catch {
+                await MainActor.run { saveError = error.localizedDescription; isExtracting = false }
             }
         }
     }
@@ -948,59 +1068,158 @@ struct JobDetailView: View {
 struct AddJobView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @State private var name = ""
-    @State private var company = ""
-    @State private var description = ""
+    @Query(sort: \JobTarget.createdAt, order: .reverse) private var jobs: [JobTarget]
+    @State private var draft = JobCaptureDraft()
+    @State private var mode: CaptureMode = .paste
+    @State private var isProcessing = false
+    @State private var showingResumeDraft = false
+    @State private var showingCancelPrompt = false
+    @State private var showingDuplicatePrompt = false
+    @State private var duplicateJob: JobTarget?
     @State private var saveError: String?
 
-    private var canSave: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !company.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
+    private enum CaptureMode: String, CaseIterable, Identifiable { case paste = "Paste text or link", document = "Import document", screenshots = "Import screenshots"; var id: String { rawValue } }
+    private var canSave: Bool { draft.hasContent && !isProcessing }
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Capture") {
+                    Picker("Capture method", selection: $mode) { ForEach(CaptureMode.allCases) { Text($0.rawValue).tag($0) } }
+                        .pickerStyle(.segmented)
+                    switch mode {
+                    case .paste:
+                        Button { paste() } label: { Label("Paste from clipboard", systemImage: "doc.on.clipboard") }
+                    case .document:
+                        Button { showingDocumentPicker = true } label: { Label("Choose PDF, DOCX, or TXT", systemImage: "doc.badge.plus") }
+                    case .screenshots:
+                        Button { showingImagePicker = true } label: { Label("Choose screenshots", systemImage: "photo.on.rectangle.angled") }
+                    }
+                    if isProcessing { ProgressView("Extracting locally…") }
+                }
                 Section("Job details") {
-                    TextField("Name of the job", text: $name)
-                    TextField("Company of the job", text: $company)
-                    TextEditor(text: $description)
-                        .frame(minHeight: 160)
+                    TextField("Job title (optional)", text: $draft.title)
+                    TextField("Company (optional)", text: $draft.company)
+                    TextField("Source URL (optional)", text: $draft.sourceURL)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                    TextEditor(text: $draft.description)
+                        .frame(minHeight: 180)
                         .accessibilityLabel("Job description")
                         .overlay(alignment: .topLeading) {
-                            if description.isEmpty {
-                                Text("Job description")
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 8)
-                                    .allowsHitTesting(false)
-                            }
+                            if draft.description.isEmpty { Text("Description or a valid URL is enough to save") .foregroundStyle(.secondary).padding(.top, 8).allowsHitTesting(false) }
                         }
+                    if !draft.originalSource.isEmpty { Label("Original source: \(draft.originalSource)", systemImage: "paperclip").font(.caption).foregroundStyle(.secondary) }
+                    if draft.reviewState == .needsReview {
+                        Label("Needs review", systemImage: "exclamationmark.circle").foregroundStyle(.orange)
+                        Button("Mark description reviewed") { draft.reviewState = .reviewed }.disabled(draft.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
                 }
                 Section {
                     Button("Add job") {
-                        let job = JobTarget(sourceType: .pastedText, rawText: description, parsedTitle: name, parsedCompany: company)
-                        modelContext.insert(job)
-                        do { try modelContext.save(); dismiss() }
-                        catch { saveError = error.localizedDescription }
+                        save()
                     }
                     .buttonStyle(CoralButtonStyle())
                     .frame(maxWidth: .infinity)
                     .disabled(!canSave)
+                    if !canSave { Text("Add a description, a valid source URL, or an attachment to save.").font(.caption).foregroundStyle(.secondary) }
                 }
             }
             .modifier(WorkspaceSurface())
-            .navigationTitle("Add Job")
+            .navigationTitle("Add job")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { cancel() } }
             }
+            .fileImporter(isPresented: $showingDocumentPicker, allowedContentTypes: [.pdf, .plainText, .data], allowsMultipleSelection: false) { result in importFiles(result, isImage: false) }
+            .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in importFiles(result, isImage: true) }
+            .onAppear {
+                if JobCaptureDraftStore.load()?.hasContent == true { showingResumeDraft = true }
+            }
+            .onChange(of: draft) { _, value in if value.hasContent { JobCaptureDraftStore.save(value) } }
             .alert("Couldn’t save job", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
                 Button("OK", role: .cancel) { saveError = nil }
             } message: { Text(saveError ?? "Try again.") }
+            .alert("Resume saved draft?", isPresented: $showingResumeDraft) {
+                Button("Continue draft") { if let saved = JobCaptureDraftStore.load() { draft = saved; mode = saved.sourceType == .document ? .document : saved.sourceType == .screenshot ? .screenshots : .paste } }
+                Button("Start over", role: .destructive) { JobCaptureDraftStore.clear() }
+            } message: { Text("Your unfinished capture is stored only on this device.") }
+            .confirmationDialog("Possible duplicate", isPresented: $showingDuplicatePrompt, titleVisibility: .visible) {
+                Button("Open existing") { if let duplicateJob { dismiss(); NotificationCenter.default.post(name: .cveeOpenJob, object: duplicateJob.id) } }
+                Button("Save separate job") { persistSave() }
+                Button("Cancel", role: .cancel) { }
+            } message: { Text("A saved job has the same URL or description.") }
+            .confirmationDialog("Keep this draft?", isPresented: $showingCancelPrompt, titleVisibility: .visible) {
+                Button("Keep Draft") { JobCaptureDraftStore.save(draft); dismiss() }
+                Button("Discard", role: .destructive) { JobCaptureDraftStore.clear(); if let captureID = draft.captureID { JobCaptureStore().removeAttachments(for: captureID) }; dismiss() }
+                Button("Cancel", role: .cancel) { }
+            }
         }
     }
+
+    @State private var showingDocumentPicker = false
+    @State private var showingImagePicker = false
+
+    private func paste() {
+        let pasted = UIPasteboard.general.string ?? ""
+        if let url = URL(string: pasted.trimmingCharacters(in: .whitespacesAndNewlines)), url.isHTTPURL, draft.description.isEmpty { draft.sourceURL = pasted.trimmingCharacters(in: .whitespacesAndNewlines) }
+        else { draft.description = pasted }
+        draft.originalSource = "Clipboard"
+    }
+
+    private func importFiles(_ result: Result<[URL], Error>, isImage: Bool) {
+        isProcessing = true
+        Task {
+            do {
+                let urls = try result.get()
+                guard !urls.isEmpty else { throw JobCaptureError.empty }
+                let captureID = draft.captureID ?? UUID()
+                draft.captureID = captureID
+                draft.sourceType = isImage ? .screenshot : .document
+                draft.originalSource = urls.map(\.lastPathComponent).joined(separator: ", ")
+                JobCaptureDraftStore.save(draft)
+                let scoped = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
+                defer { scoped.forEach { if $0.1 { $0.0.stopAccessingSecurityScopedResource() } } }
+                let text = try await JobCaptureExtractor().extract(urls: urls)
+                let refs = try JobCaptureStore().copyAttachments(from: urls, for: captureID)
+                let suggestions = JobCaptureExtractor().suggestions(from: text)
+                await MainActor.run {
+                    draft.captureID = captureID
+                    draft.sourceType = isImage ? .screenshot : .document
+                    draft.description = text
+                    draft.originalSource = urls.map(\.lastPathComponent).joined(separator: ", ")
+                    draft.attachments = refs
+                    draft.reviewState = .needsReview
+                    if draft.title.isEmpty { draft.title = suggestions.title ?? "" }
+                    if draft.company.isEmpty { draft.company = suggestions.company ?? "" }
+                    isProcessing = false
+                }
+            } catch {
+                await MainActor.run { saveError = error.localizedDescription; isProcessing = false }
+            }
+        }
+    }
+
+    private func save() {
+        if let duplicate = JobTargetDuplicateDetector.duplicate(of: draft, in: jobs) { duplicateJob = duplicate; showingDuplicatePrompt = true; return }
+        persistSave()
+    }
+
+    private func persistSave() {
+        let job = JobTarget(sourceType: draft.sourceType, rawText: draft.description.trimmingCharacters(in: .whitespacesAndNewlines), parsedTitle: draft.title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, parsedCompany: draft.company.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, sourceURL: draft.sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty, captureID: draft.captureID, attachmentReferencesData: try? JSONEncoder().encode(draft.attachments), captureReviewState: draft.reviewState)
+        modelContext.insert(job)
+        do { try modelContext.save(); JobCaptureDraftStore.clear(); dismiss() }
+        catch { modelContext.delete(job); saveError = error.localizedDescription }
+    }
+
+    private func cancel() { draft.hasContent ? (showingCancelPrompt = true) : dismiss() }
 }
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+extension Notification.Name { static let cveeOpenJob = Notification.Name("cvee.open-job") }
 
 struct WorkExperienceEditor: View {
     @Environment(\.dismiss) private var dismiss
@@ -1199,14 +1418,14 @@ struct NewResumeView: View {
         experiences.filter { taskSearch.isEmpty || [$0.jobTitle, $0.company, $0.tasksText].joined(separator: " ").localizedCaseInsensitiveContains(taskSearch) }
     }
     private var filteredJobs: [JobTarget] {
-        jobs.filter { jobSearch.isEmpty || [$0.parsedTitle ?? "", $0.parsedCompany ?? "", $0.rawText].joined(separator: " ").localizedCaseInsensitiveContains(jobSearch) }
+        jobs.filter { jobSearch.isEmpty || [$0.parsedTitle ?? "", $0.parsedCompany ?? "", $0.rawText, $0.sourceURL ?? ""].joined(separator: " ").localizedCaseInsensitiveContains(jobSearch) }
     }
     private var profileIsValid: Bool { !draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !draftEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var canAdvance: Bool {
         switch step {
         case .start: return startMode == .existing ? !baselineText.isEmpty : profileIsValid
         case .workLibrary: return !selectedExperienceIDs.isEmpty
-        case .jobDescription: return selectedJob != nil
+        case .jobDescription: return selectedJob?.isUsableForResume == true
         case .summary: return !isLoading
         case .generated: return generatedDraft != nil
         }
@@ -1234,7 +1453,7 @@ struct NewResumeView: View {
         .onAppear { loadProfileDraft() }
         .onChange(of: startMode) { _, mode in if mode == .fresh { baselineText = ""; selectedResumeID = nil } }
         .onChange(of: experiences.count) { _, count in if count > taskCountBeforeAdd, let newest = experiences.max(by: { $0.createdAt < $1.createdAt }) { selectedExperienceIDs.insert(newest.id) } }
-        .onChange(of: jobs.count) { _, count in if count > jobCountBeforeAdd, let newest = jobs.first { selectedJobID = newest.id } }
+        .onChange(of: jobs.count) { _, count in if count > jobCountBeforeAdd, let newest = jobs.first(where: { $0.isUsableForResume }) { selectedJobID = newest.id } }
         .sheet(isPresented: $showingAddTask) { WorkExperienceEditor(experience: WorkExperience(jobTitle: "", company: "")) }
         .sheet(isPresented: $showingImport) { TaskImportView { ids in selectedExperienceIDs.formUnion(ids) } }
         .sheet(isPresented: $showingAddJob) { AddJobView() }
@@ -1316,7 +1535,24 @@ struct NewResumeView: View {
             Section { TextField("Search saved jobs", text: $jobSearch).textInputAutocapitalization(.never) }
             Section("Job descriptions") {
                 if filteredJobs.isEmpty { ContentUnavailableView("No saved jobs", systemImage: "briefcase", description: Text("Add a job description to continue.")) }
-                ForEach(filteredJobs) { job in Button { selectedJobID = job.id } label: { HStack { VStack(alignment: .leading) { Text(job.parsedTitle ?? "Untitled job").font(.headline); Text(job.parsedCompany ?? "Unknown company").foregroundStyle(.secondary); Text(job.rawText).font(.caption).foregroundStyle(.secondary).lineLimit(3) }; Spacer(); SelectionCircle(isSelected: selectedJobID == job.id) } }.buttonStyle(.plain).accessibilityValue(selectedJobID == job.id ? "Selected" : "Not selected") }
+                ForEach(filteredJobs) { job in
+                    Button { if job.isUsableForResume { selectedJobID = job.id } } label: {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(job.displayTitle).font(.headline)
+                                Text(job.displayCompany).foregroundStyle(.secondary)
+                                Text(job.hasDescription ? job.rawText : "Complete job details in Saved Jobs")
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                                if !job.isUsableForResume { Text(job.hasDescription ? "Needs review" : "Needs description").font(.caption.weight(.medium)).foregroundStyle(.orange) }
+                            }
+                            Spacer()
+                            SelectionCircle(isSelected: selectedJobID == job.id)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!job.isUsableForResume)
+                    .accessibilityValue(selectedJobID == job.id ? "Selected" : job.isUsableForResume ? "Available" : "Unavailable")
+                }
                 Button { jobCountBeforeAdd = jobs.count; showingAddJob = true } label: { Label("Add job", systemImage: "plus") }
             }
         }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.job-description")
@@ -1403,7 +1639,7 @@ struct NewResumeView: View {
     private func importPDF(_ result: Result<URL, Error>) { do { let url = try result.get(); let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }; guard let text = PDFDocument(url: url)?.string?.trimmingCharacters(in: .whitespacesAndNewlines), text.count > 40 else { errorMessage = "This PDF has no readable text. Choose a text-based PDF."; return }; baselineText = text; selectedResumeID = nil } catch { errorMessage = "The PDF could not be opened. Choose another file." } }
     private func generate() async { isLoading = true; errorMessage = nil; generatedDraft = nil; if ProcessInfo.processInfo.arguments.contains("-resume-format-fixture") { generatedDraft = ResumeDraft(name: "Andrei Hidalgo — Full Stack AI Developer", summary: "AI developer focused on reliable, user-centered software.", experience: selectedExperiences.map { ($0.jobTitle, $0.tasks) }, skills: ["SwiftUI", "SwiftData", "Python"]); generatedText = JakesResumeTemplate().render(draft: generatedDraft!).string; isEditingGenerated = false; step = .generated; isLoading = false; return }; do { generatedDraft = try await ResumeGenerationService().generate(jobText: selectedJob?.rawText ?? "", work: selectedExperiences, profileName: draftName, profileText: profileText, baselineText: baselineText.isEmpty ? nil : baselineText); generatedText = generatedDraft?.rawText.isEmpty == false ? generatedDraft?.rawText ?? "" : generatedDraft.map { JakesResumeTemplate().render(draft: $0).string } ?? ""; isEditingGenerated = false; step = .generated } catch { errorMessage = error.localizedDescription }; isLoading = false }
     private var profileText: String { [draftName, draftEmail, draftPhone, draftLocation, draftLinkedIn, draftGitHub, draftEducation, draftSkills, draftCertifications].joined(separator: "\n") }
-    private func saveGeneratedResume() { guard let generatedDraft, let selectedJob else { return }; let resume = Resume(name: generatedDraft.name, jobTarget: selectedJob, workExperienceIDs: Array(selectedExperienceIDs), sections: [ResumeSection(kind: .summary, order: 0, title: "Resume", attributedText: ResumeTextFormatter.format(generatedText))]); modelContext.insert(resume); do { try modelContext.save(); isSaved = true; onSaved() } catch { errorMessage = error.localizedDescription } }
+    private func saveGeneratedResume() { guard let generatedDraft, let selectedJob else { return }; let document = ResumeDocumentConverter.document(from: generatedDraft); let data = try? document.data(); let resume = Resume(name: generatedDraft.name, jobTarget: selectedJob, workExperienceIDs: Array(selectedExperienceIDs), sections: [ResumeSection(kind: .summary, order: 0, title: "Resume", attributedText: ResumeTextFormatter.format(generatedText))], structuredDocumentData: data); modelContext.insert(resume); do { try modelContext.save(); isSaved = true; onSaved() } catch { errorMessage = error.localizedDescription } }
 }
 
 struct ResumesView: View {
@@ -1428,64 +1664,46 @@ struct ResumesView: View {
 
 struct ResumeEditorView: View {
     @Bindable var resume: Resume
+    var body: some View {
+        if resume.structuredDocumentData != nil {
+            if (try? ResumeDocumentConverter.document(for: resume)) != nil {
+                StructuredResumeEditorView(resume: resume)
+            } else {
+                ResumeRecoveryView(resume: resume)
+            }
+        } else {
+            LegacyResumeView(resume: resume)
+        }
+    }
+}
+
+struct LegacyResumeView: View {
+    @Bindable var resume: Resume
+    @Environment(\.modelContext) private var modelContext
+    @State private var editableCopy: Resume?
     @State private var showShare = false
     @State private var shareItems: [Any] = []
-    @State private var editorMode = EditorMode.formatted
-    @State private var latexText = ""
-
-    private enum EditorMode: String, CaseIterable { case formatted, latex }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let section = resume.sections.sorted(by: { $0.order < $1.order }).first {
-                HStack {
-                    Button("Formatted") { editorMode = .formatted }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("resume.formatted-mode")
-                    Button("LaTeX") { editorMode = .latex }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("resume.latex-mode")
-                }
-                .padding()
-                .accessibilityIdentifier("resume.editor-format")
-
-                if editorMode == .formatted {
-                    EditableResumeTextView(section: section) { resume.updatedAt = .now }
-                        .accessibilityIdentifier("resume.editor")
-                } else {
-                    TextEditor(text: $latexText)
-                        .font(.system(.body, design: .monospaced))
-                        .padding(12)
-                        .accessibilityLabel("LaTeX resume editor")
-                        .accessibilityIdentifier("resume.latex-editor")
-                }
-            } else { ContentUnavailableView("Resume is empty", systemImage: "doc.text") }
+        VStack(spacing: 12) {
+            Label("Legacy resume", systemImage: "doc.text").font(.headline)
+            Text("The original remains unchanged. Create an editable copy to use section forms.").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button("Create editable copy") { createCopy() }.buttonStyle(CoralButtonStyle()).accessibilityIdentifier("resume.create-editable-copy")
+            ResumePagePreview(pdfData: ResumeExportService().pdfData(for: resume))
         }
-        .background(CVeeColors.card)
+        .padding().background(CVeeColors.page)
         .navigationTitle(resume.name).navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            if let section = resume.sections.sorted(by: { $0.order < $1.order }).first { latexText = ResumeLaTeXFormatter.source(from: section.attributedText) }
-        }
-        .onChange(of: editorMode) { _, mode in
-            guard let section = resume.sections.sorted(by: { $0.order < $1.order }).first else { return }
-            if mode == .latex { latexText = ResumeLaTeXFormatter.source(from: section.attributedText) }
-            else { section.attributedText = ResumeLaTeXFormatter.attributedText(from: latexText); resume.updatedAt = .now }
-        }
-        .onChange(of: latexText) { _, text in
-            guard editorMode == .latex, let section = resume.sections.sorted(by: { $0.order < $1.order }).first else { return }
-            section.attributedText = ResumeLaTeXFormatter.attributedText(from: text)
-            resume.updatedAt = .now
-        }
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { Button("Export PDF") { export(pdf: true) }.accessibilityIdentifier("resume.export-pdf"); Button("Export RTF") { export(pdf: false) }.accessibilityIdentifier("resume.export-rtf") } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Export resume").accessibilityIdentifier("resume.export") } }
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { Button("Export PDF") { export(pdf: true) }.accessibilityIdentifier("resume.export-pdf"); Button("Export RTF") { export(pdf: false) }.accessibilityIdentifier("resume.export-rtf") } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Export resume") } }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareItems) }
+        .sheet(item: $editableCopy) { StructuredResumeEditorView(resume: $0) }
     }
+    private func createCopy() { guard let data = try? ResumeDocumentConverter.document(for: resume).data() else { return }; let copy = Resume(name: "\(resume.name) — editable", jobTarget: resume.jobTarget, workExperienceIDs: resume.linkedWorkExperienceIDs, structuredDocumentData: data); modelContext.insert(copy); try? modelContext.save(); editableCopy = copy }
+    private func export(pdf: Bool) { let service = ResumeExportService(); shareItems = pdf ? [service.pdfData(for: resume)] : [(try? service.rtfData(for: resume)) as Any].compactMap { $0 }; showShare = !shareItems.isEmpty }
+}
 
-    private func export(pdf: Bool) {
-        let service = ResumeExportService()
-        if pdf { shareItems = [service.pdfData(for: resume)] }
-        else { shareItems = [(try? service.rtfData(for: resume)) as Any].compactMap { $0 } }
-        showShare = !shareItems.isEmpty
-    }
+struct ResumeRecoveryView: View {
+    let resume: Resume
+    var body: some View { VStack(spacing: 16) { ContentUnavailableView("Editable copy unavailable", systemImage: "exclamationmark.triangle", description: Text("The structured data could not be read. The original resume is preserved below.")); ResumePagePreview(pdfData: ResumeExportService().pdfData(for: resume)) }.padding().navigationTitle(resume.name).navigationBarTitleDisplayMode(.inline) }
 }
 
 struct ResumePreviewView: View {

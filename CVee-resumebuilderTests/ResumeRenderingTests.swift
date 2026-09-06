@@ -4,6 +4,40 @@ import UIKit
 @testable import CVee_resumebuilder
 
 final class ResumeRenderingTests: XCTestCase {
+    func testStructuredDocumentRoundTripPreservesOrderVisibilityAndUnicode() throws {
+        var document = ResumeDocument.empty
+        document.sections.append(ResumeDocumentSection(kind: .experience, title: "Experience", isVisible: false, content: .experience([ExperienceEntry(role: "Développeur", bullets: [ResumeBullet(text: "Built résumé tools")])])) )
+        let restored = try ResumeDocument.load(document.data())
+        XCTAssertEqual(restored, document)
+        XCTAssertEqual(restored.sections.map(\.kind), [.header, .experience])
+        XCTAssertFalse(restored.sections[1].isVisible)
+    }
+
+    func testLegacyConversionKeepsAmbiguousSourceForReview() {
+        let source = "Taylor Example\ntaylor@example.com\nA passage without a known heading."
+        let document = ResumeDocumentConverter.document(from: source, name: "Taylor Example")
+        XCTAssertEqual(document.originalSource, source)
+        XCTAssertTrue(document.conversionNotes.isEmpty == false)
+        XCTAssertTrue(document.sections.contains { $0.title == "Review placement" })
+    }
+
+    func testLatexImporterUnescapesSupportedSymbolsAndReportsUnknownCommands() {
+        let result = ResumeLaTeXImporter.convert(#"\begin{document}\section{Skills}\textbf{C\&C++} \mystery{kept}\end{document}"#)
+        XCTAssertTrue(result.text.contains("C&C++"))
+        XCTAssertTrue(result.unsupportedCommands.contains("\\mystery"))
+    }
+
+    func testStructuredRendererOmitsHiddenSectionsAndKeepsLongContent() throws {
+        var document = ResumeDocument.empty
+        document.sections[0].content = .contact(ContactContent(name: "Taylor Example", email: "taylor@example.com"))
+        document.sections.append(ResumeDocumentSection(kind: .summary, title: "Summary", content: .summary(String(repeating: "Visible résumé content. ", count: 900))))
+        document.sections.append(ResumeDocumentSection(kind: .custom, title: "Hidden", isVisible: false, content: .custom(CustomContent(paragraphs: ["SECRET_SENTINEL"]))))
+        let pdf = try XCTUnwrap(PDFDocument(data: ResumeDocumentRenderer().pdfData(for: document)))
+        XCTAssertGreaterThan(pdf.pageCount, 1)
+        XCTAssertTrue(pdf.string?.contains("Visible résumé content") == true)
+        XCTAssertFalse(pdf.string?.contains("SECRET_SENTINEL") == true)
+    }
+
     func testPDFAndRTFKeepLegacyContentVisibleInBothAppearances() throws {
         let source = NSMutableAttributedString(string: "Taylor Example\nemail@example.com\nSUMMARY\nVisible resume text • résumé\nFINAL SENTINEL")
         source.addAttributes([.foregroundColor: UIColor.label, .backgroundColor: UIColor.black], range: NSRange(location: 0, length: source.length))

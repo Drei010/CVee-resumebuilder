@@ -15,19 +15,44 @@ import FoundationModels
 enum JobTargetSource: String, Codable, CaseIterable, Identifiable {
     case pastedText
     case linkedInURL
+    case document
+    case screenshot
+    case shareExtension
 
     var id: String { rawValue }
-    var label: String { self == .pastedText ? "Paste text" : "LinkedIn URL" }
+    var label: String {
+        switch self {
+        case .pastedText: "Paste text"
+        case .linkedInURL: "URL"
+        case .document: "Document"
+        case .screenshot: "Screenshot"
+        case .shareExtension: "Share sheet"
+        }
+    }
 }
 
-enum ResumeSectionKind: String, Codable, CaseIterable {
+enum ResumeSectionKind: String, Codable, CaseIterable, Hashable {
     case header
     case summary
     case experience
+    case projects
     case skills
     case education
+    case certifications
+    case custom
 
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .header: "Contact"
+        case .summary: "Summary"
+        case .experience: "Experience"
+        case .projects: "Projects"
+        case .skills: "Skills"
+        case .education: "Education"
+        case .certifications: "Certifications"
+        case .custom: "Custom"
+        }
+    }
 }
 
 @Model
@@ -71,8 +96,13 @@ final class JobTarget {
     var parsedTitle: String?
     var parsedCompany: String?
     var createdAt: Date
+    var sourceURL: String?
+    var captureID: UUID?
+    var captureMetadataData: Data?
+    var attachmentReferencesData: Data?
+    var captureReviewStateRawValue: String?
 
-    init(sourceType: JobTargetSource, rawText: String, linkedInURL: String? = nil, parsedTitle: String? = nil, parsedCompany: String? = nil) {
+    init(sourceType: JobTargetSource, rawText: String, linkedInURL: String? = nil, parsedTitle: String? = nil, parsedCompany: String? = nil, sourceURL: String? = nil, captureID: UUID? = nil, captureMetadataData: Data? = nil, attachmentReferencesData: Data? = nil, captureReviewState: JobCaptureReviewState = .reviewed) {
         self.id = UUID()
         self.sourceTypeRawValue = sourceType.rawValue
         self.rawText = rawText
@@ -80,12 +110,35 @@ final class JobTarget {
         self.parsedTitle = parsedTitle
         self.parsedCompany = parsedCompany
         self.createdAt = .now
+        self.sourceURL = sourceURL ?? linkedInURL
+        self.captureID = captureID
+        self.captureMetadataData = captureMetadataData
+        self.attachmentReferencesData = attachmentReferencesData
+        self.captureReviewStateRawValue = captureReviewState.rawValue
     }
 
     var sourceType: JobTargetSource {
         get { JobTargetSource(rawValue: sourceTypeRawValue) ?? .pastedText }
         set { sourceTypeRawValue = newValue.rawValue }
     }
+
+    var captureReviewState: JobCaptureReviewState {
+        get { JobCaptureReviewState(rawValue: captureReviewStateRawValue ?? "reviewed") ?? .reviewed }
+        set { captureReviewStateRawValue = newValue.rawValue }
+    }
+
+    var attachments: [JobAttachmentReference] {
+        get {
+            guard let data = attachmentReferencesData else { return [] }
+            return (try? JSONDecoder().decode([JobAttachmentReference].self, from: data)) ?? []
+        }
+        set { attachmentReferencesData = try? JSONEncoder().encode(newValue) }
+    }
+
+    var hasDescription: Bool { !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var isUsableForResume: Bool { hasDescription && captureReviewState == .reviewed }
+    var displayTitle: String { parsedTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? parsedTitle! : "Untitled job" }
+    var displayCompany: String { parsedCompany?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? parsedCompany! : "Company not set" }
 }
 
 @Model
@@ -125,9 +178,10 @@ final class Resume {
     var updatedAt: Date
     var jobTarget: JobTarget?
     var workExperienceIDs: String
+    var structuredDocumentData: Data?
     @Relationship(deleteRule: .cascade, inverse: \ResumeSection.resume) var sections: [ResumeSection] = []
 
-    init(name: String = "Untitled resume", jobTarget: JobTarget? = nil, workExperienceIDs: [UUID] = [], sections: [ResumeSection] = []) {
+    init(name: String = "Untitled resume", jobTarget: JobTarget? = nil, workExperienceIDs: [UUID] = [], sections: [ResumeSection] = [], structuredDocumentData: Data? = nil) {
         self.id = UUID()
         self.name = name
         self.template = "jakes"
@@ -135,6 +189,7 @@ final class Resume {
         self.updatedAt = .now
         self.jobTarget = jobTarget
         self.workExperienceIDs = workExperienceIDs.map(\.uuidString).joined(separator: ",")
+        self.structuredDocumentData = structuredDocumentData
         self.sections = sections
     }
 
@@ -165,7 +220,7 @@ enum LinkedInFetchError: LocalizedError {
 
 struct LinkedInJobFetcher {
     func fetch(urlString: String) async throws -> LinkedInFetchResult {
-        guard let url = URL(string: urlString), url.scheme == "https", url.host?.contains("linkedin.com") == true else {
+        guard let url = URL(string: urlString), url.scheme == "https", url.host?.lowercased().hasSuffix("linkedin.com") == true else {
             throw LinkedInFetchError.invalidURL
         }
         var request = URLRequest(url: url)
@@ -384,7 +439,13 @@ struct TaskDocumentReader {
     private func readDOCX(_ url: URL) throws -> String? {
         #if canImport(ZIPFoundation)
         guard let archive = Archive(url: url, accessMode: .read), let entry = archive["word/document.xml"] else { throw TaskImportError.unreadable("The Word document could not be opened.") }
-        var data = Data(); _ = try archive.extract(entry) { data.append($0) }
+        var data = Data(); var exceededLimit = false
+        _ = try archive.extract(entry) {
+            guard !exceededLimit else { return }
+            data.append($0)
+            if data.count > 10_000_000 { exceededLimit = true }
+        }
+        guard !exceededLimit else { throw TaskImportError.unreadable("This Word document expands beyond the 10 MB extraction limit.") }
         let parser = XMLTextParser(); parser.parse(data)
         return parser.text
         #else
@@ -546,7 +607,7 @@ struct ResumeExportService {
     static let pageMargins: CGFloat = 36
 
     func rtfData(for resume: Resume) throws -> Data {
-        let text = ResumeTextFormatter.documentStyle(combinedText(for: resume))
+        let text = ResumeTextFormatter.documentStyle(structuredText(for: resume) ?? combinedText(for: resume))
         let data = try text.data(from: NSRange(location: 0, length: text.length), documentAttributes: [
             .documentType: NSAttributedString.DocumentType.rtf,
             .paperSize: NSValue(cgSize: Self.pageSize)
@@ -562,7 +623,10 @@ struct ResumeExportService {
     }
 
     func pdfData(for resume: Resume) -> Data {
-        pdfData(for: combinedText(for: resume))
+        if let data = resume.structuredDocumentData, let document = try? ResumeDocument.load(data) {
+            return ResumeDocumentRenderer().pdfData(for: document)
+        }
+        return pdfData(for: combinedText(for: resume))
     }
 
     func pdfData(for text: NSAttributedString) -> Data {
@@ -598,5 +662,10 @@ struct ResumeExportService {
             result.append(NSAttributedString(string: "\n"))
         }
         return result
+    }
+
+    private func structuredText(for resume: Resume) -> NSAttributedString? {
+        guard let data = resume.structuredDocumentData, let document = try? ResumeDocument.load(data) else { return nil }
+        return ResumeDocumentRenderer().attributedText(for: document)
     }
 }
