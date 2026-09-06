@@ -28,6 +28,7 @@ COMMON_ARGS=(
   -destination-timeout 120
   -derivedDataPath "$PWD/.derivedData"
   -only-testing:CVee-resumebuilderUITests
+  -only-testing:CVee-resumebuilderTests
   -parallel-testing-enabled NO
   CODE_SIGNING_ALLOWED=NO
 )

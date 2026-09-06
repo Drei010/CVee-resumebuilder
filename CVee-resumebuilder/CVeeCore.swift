@@ -447,6 +447,7 @@ struct JakesResumeTemplate: ResumeTemplate {
 
 enum ResumeTextFormatter {
     private static let sectionHeadings = Set(["WORK EXPERIENCE", "EXPERIENCE", "PROJECTS", "SKILLS", "SKILLS & ABILITIES", "CERTIFICATIONS", "EDUCATION", "SUMMARY"])
+    static let documentContactColor = UIColor(red: 0.04, green: 0.24, blue: 0.55, alpha: 1)
 
     static func format(_ text: String) -> NSAttributedString {
         let result = NSMutableAttributedString()
@@ -475,7 +476,7 @@ enum ResumeTextFormatter {
             }
             if isName || (index == 1 && !isSection) { paragraph.alignment = .center }
 
-            let color: UIColor = index == 1 && !isSection ? .systemBlue : .label
+            let color: UIColor = index == 1 && !isSection ? documentContactColor : .black
 
             var attributes: [NSAttributedString.Key: Any] = [
                 .font: isName ? name : index == 1 && !isSection ? contact : isSection ? heading : body,
@@ -484,6 +485,25 @@ enum ResumeTextFormatter {
             ]
             if isSection { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
             result.append(NSAttributedString(string: line + "\n", attributes: attributes))
+        }
+        return result
+    }
+
+    /// Converts appearance-dependent editor attributes into fixed paper-document colors.
+    static func documentStyle(_ text: NSAttributedString) -> NSAttributedString {
+        guard text.length > 0 else { return NSAttributedString() }
+        let result = NSMutableAttributedString(attributedString: text)
+        let fullRange = NSRange(location: 0, length: result.length)
+        result.addAttribute(.foregroundColor, value: UIColor.black, range: fullRange)
+        result.removeAttribute(.backgroundColor, range: fullRange)
+
+        var offset = 0
+        for (index, line) in text.string.components(separatedBy: .newlines).enumerated() {
+            let length = (line as NSString).length
+            if index == 1, !sectionHeadings.contains(line.uppercased()), length > 0 {
+                result.addAttribute(.foregroundColor, value: documentContactColor, range: NSRange(location: offset, length: length))
+            }
+            offset += length + 1
         }
         return result
     }
@@ -526,7 +546,7 @@ struct ResumeExportService {
     static let pageMargins: CGFloat = 36
 
     func rtfData(for resume: Resume) throws -> Data {
-        let text = combinedText(for: resume)
+        let text = ResumeTextFormatter.documentStyle(combinedText(for: resume))
         let data = try text.data(from: NSRange(location: 0, length: text.length), documentAttributes: [
             .documentType: NSAttributedString.DocumentType.rtf,
             .paperSize: NSValue(cgSize: Self.pageSize)
@@ -546,6 +566,8 @@ struct ResumeExportService {
     }
 
     func pdfData(for text: NSAttributedString) -> Data {
+        let text = ResumeTextFormatter.documentStyle(text)
+        guard !text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return Data() }
         let page = CGRect(origin: .zero, size: Self.pageSize)
         let renderer = UIGraphicsPDFRenderer(bounds: page)
         return renderer.pdfData { context in
@@ -553,6 +575,8 @@ struct ResumeExportService {
             var location = 0
             while location < text.length {
                 context.beginPage()
+                context.cgContext.setFillColor(UIColor.white.cgColor)
+                context.cgContext.fill(page)
                 context.cgContext.saveGState()
                 context.cgContext.translateBy(x: 0, y: Self.pageSize.height)
                 context.cgContext.scaleBy(x: 1, y: -1)
@@ -570,7 +594,7 @@ struct ResumeExportService {
     private func combinedText(for resume: Resume) -> NSAttributedString {
         let result = NSMutableAttributedString()
         for section in resume.sections.sorted(by: { $0.order < $1.order }) {
-            result.append(section.attributedText)
+            result.append(ResumeTextFormatter.documentStyle(section.attributedText))
             result.append(NSAttributedString(string: "\n"))
         }
         return result

@@ -18,11 +18,19 @@
 			remoteGlobalIDString = 68179DF53010721600B4AB71;
 			remoteInfo = "CVee-resumebuilder";
 		};
+		F2000000000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 68179DEE3010721600B4AB71 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 68179DF53010721600B4AB71;
+			remoteInfo = "CVee-resumebuilder";
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		68179DF63010721600B4AB71 /* CVee-resumebuilder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "CVee-resumebuilder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F10000000000000000000006 /* CVee-resumebuilderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "CVee-resumebuilderUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F20000000000000000000006 /* CVee-resumebuilderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "CVee-resumebuilderTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,6 +42,11 @@
 		F10000000000000000000001 /* CVee-resumebuilderUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "CVee-resumebuilderUITests";
+			sourceTree = "<group>";
+		};
+		F20000000000000000000001 /* CVee-resumebuilderTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "CVee-resumebuilderTests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -71,6 +84,7 @@
 			children = (
 				68179DF63010721600B4AB71 /* CVee-resumebuilder.app */,
 				F10000000000000000000006 /* CVee-resumebuilderUITests.xctest */,
+				F20000000000000000000006 /* CVee-resumebuilderTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -79,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				F10000000000000000000001 /* CVee-resumebuilderUITests */,
+				F20000000000000000000001 /* CVee-resumebuilderTests */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -130,6 +145,27 @@
 			productReference = F10000000000000000000006 /* CVee-resumebuilderUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		F20000000000000000000002 /* CVee-resumebuilderTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F20000000000000000000007 /* Build configuration list for PBXNativeTarget "CVee-resumebuilderTests" */;
+			buildPhases = (
+				F20000000000000000000003 /* Sources */,
+				F20000000000000000000004 /* Frameworks */,
+				F20000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F2000000000000000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				F20000000000000000000001 /* CVee-resumebuilderTests */,
+			);
+			name = "CVee-resumebuilderTests";
+			productName = "CVee-resumebuilderTests";
+			productReference = F20000000000000000000006 /* CVee-resumebuilderTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -144,6 +180,10 @@
 						CreatedOnToolsVersion = 26.6;
 					};
 					F10000000000000000000002 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = 68179DF53010721600B4AB71;
+					};
+					F20000000000000000000002 = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = 68179DF53010721600B4AB71;
 					};
@@ -168,6 +208,7 @@
 			targets = (
 				68179DF53010721600B4AB71 /* CVee-resumebuilder */,
 				F10000000000000000000002 /* CVee-resumebuilderUITests */,
+				F20000000000000000000002 /* CVee-resumebuilderTests */,
 			);
 		};
 /* End PBXProject section */
@@ -181,6 +222,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F10000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F20000000000000000000005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -204,6 +252,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F20000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -211,6 +266,11 @@
 			isa = PBXTargetDependency;
 			target = 68179DF53010721600B4AB71 /* CVee-resumebuilder */;
 			targetProxy = F1000000000000000000000A /* PBXContainerItemProxy */;
+		};
+		F2000000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 68179DF53010721600B4AB71 /* CVee-resumebuilder */;
+			targetProxy = F2000000000000000000000A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -430,6 +490,36 @@
 			};
 			name = Release;
 		};
+		F20000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.drei010.CVee-resumebuilderTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CVee-resumebuilder.app/CVee-resumebuilder";
+			};
+			name = Debug;
+		};
+		F20000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.drei010.CVee-resumebuilderTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CVee-resumebuilder.app/CVee-resumebuilder";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -456,6 +546,15 @@
 			buildConfigurations = (
 				F10000000000000000000008 /* Debug */,
 				F10000000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F20000000000000000000007 /* Build configuration list for PBXNativeTarget "CVee-resumebuilderTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F20000000000000000000008 /* Debug */,
+				F20000000000000000000009 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

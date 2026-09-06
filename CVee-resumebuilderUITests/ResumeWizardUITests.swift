@@ -1,4 +1,6 @@
 import XCTest
+import UIKit
+import Vision
 
 final class ResumeWizardUITests: XCTestCase {
     private let timeout: TimeInterval = 10
@@ -193,8 +195,25 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(app.buttons["wizard.generate"].waitForExistence(timeout: timeout))
         app.buttons["wizard.generate"].tap()
 
-        XCTAssertTrue(app.otherElements["wizard.generated.pdf"].waitForExistence(timeout: timeout))
+        let preview = app.descendants(matching: .any)["wizard.generated.pdf"]
+        XCTAssertTrue(preview.waitForExistence(timeout: timeout))
+        XCTAssertFalse(preview.frame.isEmpty)
+        assertPreviewContainsText(app, preview, "Andrei Hidalgo")
+        capture(app, "resume-preview-before-edit")
         XCTAssertTrue(app.buttons["wizard.save-resume"].waitForExistence(timeout: timeout))
+        app.buttons["wizard.edit-resume"].tap()
+        let formattedEditor = app.descendants(matching: .any)["wizard.formatted-editor"]
+        XCTAssertTrue(formattedEditor.waitForExistence(timeout: timeout))
+        formattedEditor.tap()
+        formattedEditor.typeText(" PREVIEW_SENTINEL")
+        app.buttons["wizard.edit-resume"].tap()
+        assertPreviewContainsText(app, preview, "PREVIEW_SENTINEL")
+        for _ in 0..<4 {
+            app.buttons["wizard.edit-resume"].tap()
+            XCTAssertTrue(app.descendants(matching: .any)["wizard.formatted-editor"].waitForExistence(timeout: timeout))
+            app.buttons["wizard.edit-resume"].tap()
+        }
+        capture(app, "resume-preview-after-edit")
         app.buttons["wizard.edit-resume"].tap()
         XCTAssertTrue(app.buttons["wizard.latex-mode"].waitForExistence(timeout: timeout))
         app.buttons["wizard.latex-mode"].tap()
@@ -216,5 +235,21 @@ final class ResumeWizardUITests: XCTestCase {
         app.buttons["resume.export"].tap()
         XCTAssertTrue(app.buttons["resume.export-pdf"].waitForExistence(timeout: timeout))
         XCTAssertTrue(app.buttons["resume.export-rtf"].waitForExistence(timeout: timeout))
+    }
+
+    private func assertPreviewContainsText(_ app: XCUIApplication, _ preview: XCUIElement, _ expected: String, file: StaticString = #filePath, line: UInt = #line) {
+        let screenshot = app.screenshot().image
+        guard let image = screenshot.cgImage else { XCTFail("Preview screenshot could not be read", file: file, line: line); return }
+        let scale = CGFloat(image.width) / app.frame.width
+        let frame = preview.frame.integral
+        let cropRect = CGRect(x: frame.minX * scale, y: frame.minY * scale, width: frame.width * scale, height: frame.height * scale).intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard let crop = image.cropping(to: cropRect) else { XCTFail("Preview screenshot could not be cropped", file: file, line: line); return }
+
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .fast
+        request.usesLanguageCorrection = false
+        try? VNImageRequestHandler(cgImage: crop, options: [:]).perform([request])
+        let recognized = request.results?.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ") ?? ""
+        XCTAssertTrue(recognized.localizedCaseInsensitiveContains(expected), "Preview OCR did not find '\(expected)' in '\(recognized)'", file: file, line: line)
     }
 }

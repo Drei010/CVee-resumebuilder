@@ -15,6 +15,9 @@
       <TestableReference skipped="NO">
         <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="F10000000000000000000002" BuildableName="CVee-resumebuilderUITests.xctest" BlueprintName="CVee-resumebuilderUITests" ReferencedContainer="container:CVee-resumebuilder.xcodeproj"/>
       </TestableReference>
+      <TestableReference skipped="NO">
+        <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="F20000000000000000000002" BuildableName="CVee-resumebuilderTests.xctest" BlueprintName="CVee-resumebuilderTests" ReferencedContainer="container:CVee-resumebuilder.xcodeproj"/>
+      </TestableReference>
     </Testables>
   </TestAction>
   <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" debugServiceExtension="internal" allowLocationSimulation="YES">

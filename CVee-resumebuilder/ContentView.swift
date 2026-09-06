@@ -1358,6 +1358,7 @@ struct NewResumeView: View {
                                 .frame(minHeight: 420)
                                 .padding(12)
                                 .background(.background)
+                                .accessibilityIdentifier("wizard.formatted-editor")
                         }
                     } else {
                         ResumePagePreview(pdfData: ResumeExportService().pdfData(for: ResumeTextFormatter.format(generatedText)))
@@ -1504,38 +1505,67 @@ struct ResumePagePreview: View {
     let pdfData: Data
 
     var body: some View {
-        ResumePDFView(pdfData: pdfData)
-            .aspectRatio(612.0 / 792.0, contentMode: .fit)
-            .background(CVeeColors.card)
-            .accessibilityIdentifier("wizard.generated.pdf")
+        Group {
+            if let document = PDFDocument(data: pdfData), document.pageCount > 0 {
+                ResumePDFView(pdfData: pdfData)
+                    .aspectRatio(612.0 / 792.0, contentMode: .fit)
+                    .background(CVeeColors.card)
+                    .accessibilityIdentifier("wizard.generated.pdf")
+            } else if pdfData.isEmpty {
+                ContentUnavailableView("No resume content to preview", systemImage: "doc.text")
+                    .accessibilityIdentifier("resume.preview-empty")
+            } else {
+                ContentUnavailableView("Resume preview could not be loaded", systemImage: "exclamationmark.triangle")
+                    .accessibilityIdentifier("resume.preview-error")
+            }
+        }
     }
 }
 
 struct ResumePDFView: UIViewRepresentable {
     let pdfData: Data
 
+    final class Coordinator {
+        var pdfData: Data
+        init(pdfData: Data) { self.pdfData = pdfData }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(pdfData: pdfData) }
+
     func makeUIView(context: Context) -> PDFView {
         let view = PDFView()
         view.autoScales = true
-        view.displayMode = .singlePage
+        view.displayMode = .singlePageContinuous
         view.displayDirection = .vertical
-        view.backgroundColor = .systemGroupedBackground
+        view.backgroundColor = .white
         view.document = PDFDocument(data: pdfData)
+        view.accessibilityLabel = "Resume preview"
+        view.accessibilityValue = view.document?.string
         return view
     }
 
     func updateUIView(_ uiView: PDFView, context: Context) {
-        uiView.document = PDFDocument(data: pdfData)
+        guard context.coordinator.pdfData != pdfData else { return }
+        context.coordinator.pdfData = pdfData
+        guard let document = PDFDocument(data: pdfData), document.pageCount > 0 else {
+            uiView.document = nil
+            uiView.accessibilityValue = nil
+            return
+        }
+        uiView.document = document
+        uiView.autoScales = true
+        uiView.go(to: document.page(at: 0)!)
+        uiView.accessibilityValue = document.string
     }
 }
 
 struct EditableResumeTextView: UIViewRepresentable {
     let section: ResumeSection
     let onChange: () -> Void
-    func makeUIView(context: Context) -> UITextView { let view = UITextView(); view.delegate = context.coordinator; view.isEditable = true; view.backgroundColor = .systemBackground; view.textContainerInset = UIEdgeInsets(top: 28, left: 28, bottom: 28, right: 28); view.attributedText = section.attributedText; view.accessibilityLabel = "Editable resume"; return view }
-    func updateUIView(_ uiView: UITextView, context: Context) { if !uiView.isFirstResponder { uiView.attributedText = section.attributedText } }
+    func makeUIView(context: Context) -> UITextView { let view = UITextView(); view.delegate = context.coordinator; view.isEditable = true; view.overrideUserInterfaceStyle = .light; view.backgroundColor = .white; view.textColor = .black; view.textContainerInset = UIEdgeInsets(top: 28, left: 28, bottom: 28, right: 28); view.attributedText = ResumeTextFormatter.documentStyle(section.attributedText); view.accessibilityLabel = "Editable resume"; return view }
+    func updateUIView(_ uiView: UITextView, context: Context) { if !uiView.isFirstResponder { uiView.attributedText = ResumeTextFormatter.documentStyle(section.attributedText) } }
     func makeCoordinator() -> Coordinator { Coordinator(section: section, onChange: onChange) }
-    final class Coordinator: NSObject, UITextViewDelegate { let section: ResumeSection; let onChange: () -> Void; init(section: ResumeSection, onChange: @escaping () -> Void) { self.section = section; self.onChange = onChange }; func textViewDidChange(_ textView: UITextView) { section.attributedText = textView.attributedText; onChange() } }
+    final class Coordinator: NSObject, UITextViewDelegate { let section: ResumeSection; let onChange: () -> Void; init(section: ResumeSection, onChange: @escaping () -> Void) { self.section = section; self.onChange = onChange }; func textViewDidChange(_ textView: UITextView) { section.attributedText = ResumeTextFormatter.documentStyle(textView.attributedText); onChange() } }
 }
 
 struct ShareSheet: UIViewControllerRepresentable {
