@@ -41,7 +41,8 @@ struct APIKeyStore {
         let update: [String: Any] = [kSecValueData as String: Data(key.utf8), kSecAttrAccessControl as String: accessControl]
         let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
         if status == errSecItemNotFound {
-            var add = query; add.merge(update) { _, new in new }; guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { throw AIProviderError.keychain }
+            let add: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: provider.rawValue, kSecValueData as String: Data(key.utf8), kSecAttrAccessControl as String: accessControl]
+            guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { throw AIProviderError.keychain }
         } else if status != errSecSuccess { throw AIProviderError.keychain }
     }
     func delete(for provider: AIProvider) {
