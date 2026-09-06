@@ -440,7 +440,7 @@ struct TaskDocumentReader {
 
     private func readDOCX(_ url: URL) throws -> String? {
         #if canImport(ZIPFoundation)
-        guard let archive = Archive(url: url, accessMode: .read), let entry = archive["word/document.xml"] else { throw TaskImportError.unreadable("The Word document could not be opened.") }
+        guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: nil), let entry = archive["word/document.xml"] else { throw TaskImportError.unreadable("The Word document could not be opened.") }
         var data = Data(); var exceededLimit = false
         _ = try archive.extract(entry) {
             guard !exceededLimit else { return }

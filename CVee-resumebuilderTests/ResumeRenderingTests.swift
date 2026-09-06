@@ -3,6 +3,7 @@ import PDFKit
 import UIKit
 @testable import CVee_resumebuilder
 
+@MainActor
 final class ResumeRenderingTests: XCTestCase {
     func testStructuredDocumentRoundTripPreservesOrderVisibilityAndUnicode() throws {
         var document = ResumeDocument.empty

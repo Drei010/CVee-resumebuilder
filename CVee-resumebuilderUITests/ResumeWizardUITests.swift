@@ -192,6 +192,12 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(job.firstMatch.waitForExistence(timeout: timeout))
         job.firstMatch.tap()
         app.buttons["wizard.next"].tap()
+        XCTAssertTrue(app.buttons["wizard.edit-profile"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.buttons["wizard.edit-experience"].exists)
+        XCTAssertTrue(app.buttons["wizard.edit-job"].exists)
+        app.buttons["wizard.edit-job"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.job-description"].waitForExistence(timeout: timeout))
+        app.buttons["wizard.next"].tap()
         XCTAssertTrue(app.buttons["wizard.generate"].waitForExistence(timeout: timeout))
         app.buttons["wizard.generate"].tap()
 
@@ -230,8 +236,8 @@ final class ResumeWizardUITests: XCTestCase {
         }
         capture(app, "resume-preview-after-edit")
         app.buttons["wizard.edit-resume"].tap()
-        XCTAssertTrue(app.buttons["wizard.latex-mode"].waitForExistence(timeout: timeout))
-        app.buttons["wizard.latex-mode"].tap()
+        XCTAssertTrue(app.buttons["LaTeX"].waitForExistence(timeout: timeout))
+        app.buttons["LaTeX"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["wizard.latex-editor"].waitForExistence(timeout: timeout))
         app.buttons["wizard.edit-resume"].tap()
         app.buttons["wizard.save-resume"].tap()

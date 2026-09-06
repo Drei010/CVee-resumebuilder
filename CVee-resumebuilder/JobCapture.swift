@@ -289,15 +289,15 @@ struct JobCaptureExtractor {
 
     private func recognizeText(in image: CGImage) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
-            let request = VNRecognizeTextRequest { request, error in
-                if let error { continuation.resume(throwing: error); return }
-                let text = (request.results as? [VNRecognizedTextObservation] ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
-                continuation.resume(returning: text)
-            }
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["en-US"]
-            request.usesLanguageCorrection = true
             DispatchQueue.global(qos: .userInitiated).async {
+                let request = VNRecognizeTextRequest { request, error in
+                    if let error { continuation.resume(throwing: error); return }
+                    let text = (request.results as? [VNRecognizedTextObservation] ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+                    continuation.resume(returning: text)
+                }
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                request.usesLanguageCorrection = true
                 do { try VNImageRequestHandler(cgImage: image, options: [:]).perform([request]) }
                 catch { continuation.resume(throwing: error) }
             }
