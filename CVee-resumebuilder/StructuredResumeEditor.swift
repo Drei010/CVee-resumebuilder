@@ -15,6 +15,7 @@ struct StructuredResumeEditorView: View {
     @State private var redoStack: [ResumeDocument] = []
     @State private var pendingDelete: ResumeDocumentSection?
     @State private var showingImport = false
+    @State private var showingExport = false
     @State private var showShare = false
     @State private var shareItems: [Any] = []
 
@@ -40,6 +41,10 @@ struct StructuredResumeEditorView: View {
         .confirmationDialog("Delete section?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
             if let section = pendingDelete { Button("Delete \(section.title)", role: .destructive) { mutate { document.sections.removeAll { $0.id == section.id } }; pendingDelete = nil } }
         } message: { Text("Undo restores the deleted section during this editing session.") }
+        .confirmationDialog("Export resume", isPresented: $showingExport) {
+            Button("Export PDF") { export(pdf: true) }.accessibilityIdentifier("resume.export-pdf")
+            Button("Export RTF") { export(pdf: false) }.accessibilityIdentifier("resume.export-rtf")
+        }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareItems) }
         .sheet(isPresented: $showingImport) { LaTeXImportSheet { imported in createImportedCopy(imported) } }
     }
@@ -48,6 +53,10 @@ struct StructuredResumeEditorView: View {
         List {
             Section {
                 TextField("Document name", text: Binding(get: { resume.name }, set: { resume.name = $0; changed() }))
+                Button("Export resume", systemImage: "square.and.arrow.up") { showingExport = true }
+                    .accessibilityIdentifier("resume.export")
+                Button("Import LaTeX text", systemImage: "doc.text") { showingImport = true }
+                    .accessibilityIdentifier("resume.import-latex")
                 HStack {
                     Label(saveStateText, systemImage: saveState == .saving ? "arrow.triangle.2.circlepath" : saveState == .saved ? "checkmark.circle" : "exclamationmark.triangle")
                         .foregroundStyle(saveState == .saved ? Color.secondary : saveState == .saving ? Color.orange : Color.red)
@@ -106,11 +115,6 @@ struct StructuredResumeEditorView: View {
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button("Undo") { undo() }.disabled(undoStack.isEmpty).accessibilityIdentifier("resume.undo")
             Button("Redo") { redo() }.disabled(redoStack.isEmpty).accessibilityIdentifier("resume.redo")
-            Menu {
-                Button("Import LaTeX text") { showingImport = true }.accessibilityIdentifier("resume.import-latex")
-                Button("Export PDF") { export(pdf: true) }.accessibilityIdentifier("resume.export-pdf")
-                Button("Export RTF") { export(pdf: false) }.accessibilityIdentifier("resume.export-rtf")
-            } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("Resume actions").accessibilityIdentifier("resume.export")
         }
     }
 
