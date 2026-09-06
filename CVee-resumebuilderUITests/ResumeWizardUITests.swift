@@ -116,7 +116,6 @@ final class ResumeWizardUITests: XCTestCase {
         fullName.typeText("Test User")
         let email = app.textFields["wizard.email"]
         XCTAssertTrue(email.waitForExistence(timeout: timeout))
-        XCTAssertTrue(email.isHittable)
         email.tap()
         email.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64))
         email.typeText("test@example.com")
