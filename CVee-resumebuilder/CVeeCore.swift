@@ -20,14 +20,28 @@ enum JobTargetSource: String, Codable, CaseIterable, Identifiable {
     var label: String { self == .pastedText ? "Paste text" : "LinkedIn URL" }
 }
 
-enum ResumeSectionKind: String, Codable, CaseIterable {
+enum ResumeSectionKind: String, Codable, CaseIterable, Hashable {
     case header
     case summary
     case experience
+    case projects
     case skills
     case education
+    case certifications
+    case custom
 
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .header: "Contact"
+        case .summary: "Summary"
+        case .experience: "Experience"
+        case .projects: "Projects"
+        case .skills: "Skills"
+        case .education: "Education"
+        case .certifications: "Certifications"
+        case .custom: "Custom"
+        }
+    }
 }
 
 @Model
@@ -125,9 +139,10 @@ final class Resume {
     var updatedAt: Date
     var jobTarget: JobTarget?
     var workExperienceIDs: String
+    var structuredDocumentData: Data?
     @Relationship(deleteRule: .cascade, inverse: \ResumeSection.resume) var sections: [ResumeSection] = []
 
-    init(name: String = "Untitled resume", jobTarget: JobTarget? = nil, workExperienceIDs: [UUID] = [], sections: [ResumeSection] = []) {
+    init(name: String = "Untitled resume", jobTarget: JobTarget? = nil, workExperienceIDs: [UUID] = [], sections: [ResumeSection] = [], structuredDocumentData: Data? = nil) {
         self.id = UUID()
         self.name = name
         self.template = "jakes"
@@ -135,6 +150,7 @@ final class Resume {
         self.updatedAt = .now
         self.jobTarget = jobTarget
         self.workExperienceIDs = workExperienceIDs.map(\.uuidString).joined(separator: ",")
+        self.structuredDocumentData = structuredDocumentData
         self.sections = sections
     }
 
@@ -546,7 +562,7 @@ struct ResumeExportService {
     static let pageMargins: CGFloat = 36
 
     func rtfData(for resume: Resume) throws -> Data {
-        let text = ResumeTextFormatter.documentStyle(combinedText(for: resume))
+        let text = ResumeTextFormatter.documentStyle(structuredText(for: resume) ?? combinedText(for: resume))
         let data = try text.data(from: NSRange(location: 0, length: text.length), documentAttributes: [
             .documentType: NSAttributedString.DocumentType.rtf,
             .paperSize: NSValue(cgSize: Self.pageSize)
@@ -562,7 +578,10 @@ struct ResumeExportService {
     }
 
     func pdfData(for resume: Resume) -> Data {
-        pdfData(for: combinedText(for: resume))
+        if let data = resume.structuredDocumentData, let document = try? ResumeDocument.load(data) {
+            return ResumeDocumentRenderer().pdfData(for: document)
+        }
+        return pdfData(for: combinedText(for: resume))
     }
 
     func pdfData(for text: NSAttributedString) -> Data {
@@ -598,5 +617,10 @@ struct ResumeExportService {
             result.append(NSAttributedString(string: "\n"))
         }
         return result
+    }
+
+    private func structuredText(for resume: Resume) -> NSAttributedString? {
+        guard let data = resume.structuredDocumentData, let document = try? ResumeDocument.load(data) else { return nil }
+        return ResumeDocumentRenderer().attributedText(for: document)
     }
 }

@@ -1403,7 +1403,7 @@ struct NewResumeView: View {
     private func importPDF(_ result: Result<URL, Error>) { do { let url = try result.get(); let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }; guard let text = PDFDocument(url: url)?.string?.trimmingCharacters(in: .whitespacesAndNewlines), text.count > 40 else { errorMessage = "This PDF has no readable text. Choose a text-based PDF."; return }; baselineText = text; selectedResumeID = nil } catch { errorMessage = "The PDF could not be opened. Choose another file." } }
     private func generate() async { isLoading = true; errorMessage = nil; generatedDraft = nil; if ProcessInfo.processInfo.arguments.contains("-resume-format-fixture") { generatedDraft = ResumeDraft(name: "Andrei Hidalgo — Full Stack AI Developer", summary: "AI developer focused on reliable, user-centered software.", experience: selectedExperiences.map { ($0.jobTitle, $0.tasks) }, skills: ["SwiftUI", "SwiftData", "Python"]); generatedText = JakesResumeTemplate().render(draft: generatedDraft!).string; isEditingGenerated = false; step = .generated; isLoading = false; return }; do { generatedDraft = try await ResumeGenerationService().generate(jobText: selectedJob?.rawText ?? "", work: selectedExperiences, profileName: draftName, profileText: profileText, baselineText: baselineText.isEmpty ? nil : baselineText); generatedText = generatedDraft?.rawText.isEmpty == false ? generatedDraft?.rawText ?? "" : generatedDraft.map { JakesResumeTemplate().render(draft: $0).string } ?? ""; isEditingGenerated = false; step = .generated } catch { errorMessage = error.localizedDescription }; isLoading = false }
     private var profileText: String { [draftName, draftEmail, draftPhone, draftLocation, draftLinkedIn, draftGitHub, draftEducation, draftSkills, draftCertifications].joined(separator: "\n") }
-    private func saveGeneratedResume() { guard let generatedDraft, let selectedJob else { return }; let resume = Resume(name: generatedDraft.name, jobTarget: selectedJob, workExperienceIDs: Array(selectedExperienceIDs), sections: [ResumeSection(kind: .summary, order: 0, title: "Resume", attributedText: ResumeTextFormatter.format(generatedText))]); modelContext.insert(resume); do { try modelContext.save(); isSaved = true; onSaved() } catch { errorMessage = error.localizedDescription } }
+    private func saveGeneratedResume() { guard let generatedDraft, let selectedJob else { return }; let document = ResumeDocumentConverter.document(from: generatedDraft); let data = try? document.data(); let resume = Resume(name: generatedDraft.name, jobTarget: selectedJob, workExperienceIDs: Array(selectedExperienceIDs), sections: [ResumeSection(kind: .summary, order: 0, title: "Resume", attributedText: ResumeTextFormatter.format(generatedText))], structuredDocumentData: data); modelContext.insert(resume); do { try modelContext.save(); isSaved = true; onSaved() } catch { errorMessage = error.localizedDescription } }
 }
 
 struct ResumesView: View {
@@ -1428,64 +1428,38 @@ struct ResumesView: View {
 
 struct ResumeEditorView: View {
     @Bindable var resume: Resume
+    var body: some View {
+        if resume.structuredDocumentData != nil {
+            if (try? ResumeDocumentConverter.document(for: resume)) != nil { StructuredResumeEditorView(resume: resume) }
+            else { ResumeRecoveryView(resume: resume) }
+        } else { LegacyResumeView(resume: resume) }
+    }
+}
+
+struct LegacyResumeView: View {
+    @Bindable var resume: Resume
+    @Environment(\.modelContext) private var modelContext
+    @State private var editableCopy: Resume?
     @State private var showShare = false
     @State private var shareItems: [Any] = []
-    @State private var editorMode = EditorMode.formatted
-    @State private var latexText = ""
-
-    private enum EditorMode: String, CaseIterable { case formatted, latex }
-
     var body: some View {
-        VStack(spacing: 0) {
-            if let section = resume.sections.sorted(by: { $0.order < $1.order }).first {
-                HStack {
-                    Button("Formatted") { editorMode = .formatted }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("resume.formatted-mode")
-                    Button("LaTeX") { editorMode = .latex }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("resume.latex-mode")
-                }
-                .padding()
-                .accessibilityIdentifier("resume.editor-format")
-
-                if editorMode == .formatted {
-                    EditableResumeTextView(section: section) { resume.updatedAt = .now }
-                        .accessibilityIdentifier("resume.editor")
-                } else {
-                    TextEditor(text: $latexText)
-                        .font(.system(.body, design: .monospaced))
-                        .padding(12)
-                        .accessibilityLabel("LaTeX resume editor")
-                        .accessibilityIdentifier("resume.latex-editor")
-                }
-            } else { ContentUnavailableView("Resume is empty", systemImage: "doc.text") }
-        }
-        .background(CVeeColors.card)
-        .navigationTitle(resume.name).navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            if let section = resume.sections.sorted(by: { $0.order < $1.order }).first { latexText = ResumeLaTeXFormatter.source(from: section.attributedText) }
-        }
-        .onChange(of: editorMode) { _, mode in
-            guard let section = resume.sections.sorted(by: { $0.order < $1.order }).first else { return }
-            if mode == .latex { latexText = ResumeLaTeXFormatter.source(from: section.attributedText) }
-            else { section.attributedText = ResumeLaTeXFormatter.attributedText(from: latexText); resume.updatedAt = .now }
-        }
-        .onChange(of: latexText) { _, text in
-            guard editorMode == .latex, let section = resume.sections.sorted(by: { $0.order < $1.order }).first else { return }
-            section.attributedText = ResumeLaTeXFormatter.attributedText(from: text)
-            resume.updatedAt = .now
-        }
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { Button("Export PDF") { export(pdf: true) }.accessibilityIdentifier("resume.export-pdf"); Button("Export RTF") { export(pdf: false) }.accessibilityIdentifier("resume.export-rtf") } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Export resume").accessibilityIdentifier("resume.export") } }
+        VStack(spacing: 12) {
+            Label("Legacy resume", systemImage: "doc.text").font(.headline)
+            Text("The original remains unchanged. Create an editable copy to use section forms.").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button("Create editable copy") { createCopy() }.buttonStyle(CoralButtonStyle()).accessibilityIdentifier("resume.create-editable-copy")
+            ResumePagePreview(pdfData: ResumeExportService().pdfData(for: resume))
+        }.padding().background(Color(uiColor: .systemGroupedBackground)).navigationTitle(resume.name).navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { Button("Export PDF") { export(pdf: true) }.accessibilityIdentifier("resume.export-pdf"); Button("Export RTF") { export(pdf: false) }.accessibilityIdentifier("resume.export-rtf") } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Export resume") } }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareItems) }
+        .sheet(item: $editableCopy) { StructuredResumeEditorView(resume: $0) }
     }
+    private func createCopy() { guard let data = try? ResumeDocumentConverter.document(for: resume).data() else { return }; let copy = Resume(name: "\(resume.name) — editable", jobTarget: resume.jobTarget, workExperienceIDs: resume.linkedWorkExperienceIDs, structuredDocumentData: data); modelContext.insert(copy); try? modelContext.save(); editableCopy = copy }
+    private func export(pdf: Bool) { let service = ResumeExportService(); shareItems = pdf ? [service.pdfData(for: resume)] : [(try? service.rtfData(for: resume)) as Any].compactMap { $0 }; showShare = !shareItems.isEmpty }
+}
 
-    private func export(pdf: Bool) {
-        let service = ResumeExportService()
-        if pdf { shareItems = [service.pdfData(for: resume)] }
-        else { shareItems = [(try? service.rtfData(for: resume)) as Any].compactMap { $0 } }
-        showShare = !shareItems.isEmpty
-    }
+struct ResumeRecoveryView: View {
+    let resume: Resume
+    var body: some View { VStack(spacing: 16) { ContentUnavailableView("Editable copy unavailable", systemImage: "exclamationmark.triangle", description: Text("The structured data could not be read. The original resume is preserved below.")); ResumePagePreview(pdfData: ResumeExportService().pdfData(for: resume)) }.padding().navigationTitle(resume.name).navigationBarTitleDisplayMode(.inline) }
 }
 
 struct ResumePreviewView: View {

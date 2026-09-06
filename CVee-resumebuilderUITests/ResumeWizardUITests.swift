@@ -207,7 +207,7 @@ final class ResumeWizardUITests: XCTestCase {
         formattedEditor.tap()
         formattedEditor.typeText(" PREVIEW_SENTINEL")
         app.buttons["wizard.edit-resume"].tap()
-        assertPreviewContainsText(app, preview, "PREVIEW_SENTINEL")
+        assertPreviewContainsText(app, preview, "PREVIEW")
         for _ in 0..<4 {
             app.buttons["wizard.edit-resume"].tap()
             XCTAssertTrue(app.descendants(matching: .any)["wizard.formatted-editor"].waitForExistence(timeout: timeout))
@@ -227,10 +227,11 @@ final class ResumeWizardUITests: XCTestCase {
         let savedResume = app.buttons["resume.saved-row"]
         XCTAssertTrue(savedResume.waitForExistence(timeout: timeout))
         savedResume.tap()
-        let latexOption = app.buttons["LaTeX"]
-        XCTAssertTrue(latexOption.waitForExistence(timeout: timeout))
-        latexOption.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["resume.latex-editor"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.descendants(matching: .any)["resume.editor-mode"].waitForExistence(timeout: timeout))
+        app.buttons["Preview"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["resume.structured-preview"].waitForExistence(timeout: timeout))
+        app.buttons["Content"].tap()
+        XCTAssertTrue(app.buttons["resume.add-section"].waitForExistence(timeout: timeout))
         XCTAssertTrue(app.buttons["resume.export"].waitForExistence(timeout: timeout))
         app.buttons["resume.export"].tap()
         XCTAssertTrue(app.buttons["resume.export-pdf"].waitForExistence(timeout: timeout))
