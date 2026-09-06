@@ -232,6 +232,7 @@ struct AIProviderView: View {
                 LabeledContent("Status", value: provider == .apple ? (appleUnavailable ? "Unavailable" : "On-device") : (hasSavedKey ? "Configured" : "Needs API key"))
                     .foregroundStyle(.secondary)
                 .onChange(of: provider) { _, newProvider in
+                    selection.setProvider(newProvider)
                     modelID = selection.model(for: newProvider).id
                 }
             }
