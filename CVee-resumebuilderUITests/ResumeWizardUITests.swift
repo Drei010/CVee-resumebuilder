@@ -200,6 +200,18 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertFalse(preview.frame.isEmpty)
         assertPreviewContainsText(app, preview, "Andrei Hidalgo")
         capture(app, "resume-preview-before-edit")
+        let checkMatch = app.buttons["wizard.check-job-match"]
+        XCTAssertTrue(checkMatch.waitForExistence(timeout: timeout))
+        checkMatch.tap()
+        XCTAssertTrue(app.navigationBars["Resume report"].waitForExistence(timeout: timeout))
+        let requirement = app.textFields["analysis.new-phrase"]
+        XCTAssertTrue(requirement.waitForExistence(timeout: timeout))
+        requirement.tap()
+        requirement.typeText("Python")
+        app.buttons["analysis.add-phrase"].tap()
+        app.buttons["analysis.save-requirements"].tap()
+        XCTAssertTrue(app.staticTexts["1 of 1 reviewed requirements mentioned."].waitForExistence(timeout: timeout))
+        app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["wizard.save-resume"].waitForExistence(timeout: timeout))
         app.buttons["wizard.edit-resume"].tap()
         let formattedEditor = app.descendants(matching: .any)["wizard.formatted-editor"]

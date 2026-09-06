@@ -74,6 +74,76 @@ final class ResumeRenderingTests: XCTestCase {
         XCTAssertTrue(ResumeExportService().pdfData(for: NSAttributedString(string: " \n ")).isEmpty)
     }
 
+    func testAnalysisUsesUnicodeWhitespaceAndTechnicalWholeTermMatching() {
+        XCTAssertEqual(ResumeAnalysisService.normalized("  Résumé\n  Builder  "), "résumé builder")
+        XCTAssertNotNil(ResumeAnalysisService.match("Python", in: "Built PYTHON, APIs"))
+        XCTAssertNil(ResumeAnalysisService.match("Java", in: "JavaScript"))
+        XCTAssertNil(ResumeAnalysisService.match("C", in: "C++ and C#"))
+        XCTAssertNotNil(ResumeAnalysisService.match("C++", in: "C++ and C#"))
+        XCTAssertNotNil(ResumeAnalysisService.match(".NET", in: "Worked with .NET"))
+    }
+
+    func testAnalysisCountsEachRequirementOnceAndSeparatesLibraryEvidence() {
+        let requirements = [
+            ResumeRequirement(phrase: "Python", sourcePassage: "Python required"),
+            ResumeRequirement(phrase: "Python", sourcePassage: "Python required"),
+            ResumeRequirement(phrase: "SwiftUI", sourcePassage: "SwiftUI preferred")
+        ]
+        let snapshot = ResumeAnalysisSnapshot(
+            resumeName: "Test",
+            attributedResume: NSAttributedString(string: "Python\nSUMMARY\nPython used twice"),
+            jobDescription: "Python required. SwiftUI preferred.",
+            requirements: requirements,
+            workLibrary: [ResumeAnalysisWorkEntry(id: UUID(), role: "Engineer", company: "Example", achievement: "Built SwiftUI tools", includedInResume: false)],
+            pageTarget: 1
+        )
+        let report = ResumeAnalysisService().analyze(snapshot, pdfData: ResumeExportService().pdfData(for: snapshot.attributedResume))
+        XCTAssertEqual(report.reviewedCount, 2)
+        XCTAssertEqual(report.mentionedCount, 1)
+        XCTAssertEqual(report.relatedWork.count, 1)
+        XCTAssertFalse(report.relatedWork[0].includedInResume)
+    }
+
+    func testAnalysisShowsNoRequirementsReviewedAndHealthOnlyReport() {
+        let report = ResumeAnalysisService().analyze(ResumeAnalysisSnapshot(
+            resumeName: "Test",
+            attributedResume: NSAttributedString(string: "Taylor Example\nemail@example.com\nSUMMARY\nContent"),
+            jobDescription: nil,
+            requirements: [],
+            workLibrary: [],
+            pageTarget: 1
+        ))
+        XCTAssertEqual(report.reviewedCount, 0)
+        XCTAssertEqual(report.mentionedCount, 0)
+        XCTAssertTrue(report.healthFindings.contains { $0.title == "Contact information" && $0.kind == .passed })
+    }
+
+    func testHealthFindingsCoverSmallTextMissingEmailEmptyHeadingAndRepeatedLines() {
+        let repeated = "This is a repeated line with enough words to trigger the duplicate check"
+        let source = NSMutableAttributedString(string: "Taylor Example\nSUMMARY\nEXPERIENCE\n\(repeated)\n\(repeated)")
+        source.addAttribute(.font, value: UIFont.systemFont(ofSize: 9), range: NSRange(location: 0, length: source.length))
+        let report = ResumeAnalysisService().analyze(ResumeAnalysisSnapshot(
+            resumeName: "Test",
+            attributedResume: source,
+            jobDescription: nil,
+            requirements: [],
+            workLibrary: [],
+            pageTarget: 1
+        ))
+        XCTAssertTrue(report.healthFindings.contains { $0.title == "Text size" && $0.kind == .suggestion })
+        XCTAssertTrue(report.healthFindings.contains { $0.title == "Contact information" && $0.kind == .suggestion })
+        XCTAssertTrue(report.healthFindings.contains { $0.title == "Empty section: SUMMARY" })
+        XCTAssertTrue(report.healthFindings.contains { $0.title == "Repeated content" && $0.kind == .suggestion })
+    }
+
+    func testChecklistRoundTripsAndInvalidatesWhenJobDescriptionChanges() throws {
+        let checklist = JobRequirementChecklist(description: "Python required", requirements: [ResumeRequirement(phrase: "Python", sourcePassage: "Python required")])
+        let restored = try XCTUnwrap(JobRequirementChecklist.load(try checklist.data()))
+        XCTAssertEqual(restored.requirements.count, 1)
+        XCTAssertFalse(restored.requiresReview(for: "Python required"))
+        XCTAssertTrue(restored.requiresReview(for: "Swift required"))
+    }
+
     private func visibleInk(in page: PDFPage) -> Bool {
         let image = page.thumbnail(of: CGSize(width: 612, height: 792), for: .mediaBox)
         guard let cgImage = image.cgImage, let data = cgImage.dataProvider?.data as Data? else { return false }

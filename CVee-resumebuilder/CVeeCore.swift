@@ -85,8 +85,9 @@ final class JobTarget {
     var parsedTitle: String?
     var parsedCompany: String?
     var createdAt: Date
+    var requirementChecklistData: Data?
 
-    init(sourceType: JobTargetSource, rawText: String, linkedInURL: String? = nil, parsedTitle: String? = nil, parsedCompany: String? = nil) {
+    init(sourceType: JobTargetSource, rawText: String, linkedInURL: String? = nil, parsedTitle: String? = nil, parsedCompany: String? = nil, requirementChecklistData: Data? = nil) {
         self.id = UUID()
         self.sourceTypeRawValue = sourceType.rawValue
         self.rawText = rawText
@@ -94,6 +95,7 @@ final class JobTarget {
         self.parsedTitle = parsedTitle
         self.parsedCompany = parsedCompany
         self.createdAt = .now
+        self.requirementChecklistData = requirementChecklistData
     }
 
     var sourceType: JobTargetSource {

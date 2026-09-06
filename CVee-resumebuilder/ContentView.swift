@@ -1188,6 +1188,7 @@ struct NewResumeView: View {
     @State private var generatedEditorMode = EditorMode.formatted
     @State private var isEditingGenerated = false
     @State private var isSaved = false
+    @State private var showingAnalysis = false
 
     private enum EditorMode { case formatted, latex }
 
@@ -1363,9 +1364,14 @@ struct NewResumeView: View {
                     } else {
                         ResumePagePreview(pdfData: ResumeExportService().pdfData(for: ResumeTextFormatter.format(generatedText)))
                     }
-                    Button(isEditingGenerated ? "Done editing" : "Edit resume") { if isEditingGenerated && generatedEditorMode == .latex { generatedText = ResumeLaTeXFormatter.attributedText(from: generatedLaTeX).string }; isEditingGenerated.toggle() }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("wizard.edit-resume")
+                    HStack {
+                        Button(isEditingGenerated ? "Done editing" : "Edit resume") { if isEditingGenerated && generatedEditorMode == .latex { generatedText = ResumeLaTeXFormatter.attributedText(from: generatedLaTeX).string }; isEditingGenerated.toggle() }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("wizard.edit-resume")
+                        Button("Check job match") { showingAnalysis = true }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("wizard.check-job-match")
+                    }
                     Button(isSaved ? "Saved to Resumes" : "Save Resume") { saveGeneratedResume() }
                         .buttonStyle(CoralButtonStyle())
                         .disabled(isSaved || generatedDraft == nil)
@@ -1378,6 +1384,9 @@ struct NewResumeView: View {
         }
         .accessibilityIdentifier("wizard.generated")
         .onChange(of: generatedLaTeX) { _, source in if generatedEditorMode == .latex { generatedText = ResumeLaTeXFormatter.attributedText(from: source).string } }
+        .sheet(isPresented: $showingAnalysis) {
+            ResumeAnalysisSheet(resumeName: generatedDraft?.name ?? "Draft resume", attributedText: ResumeTextFormatter.format(generatedText), job: selectedJob, workLibrary: experiences.map { ResumeAnalysisWorkEntry(id: $0.id, role: $0.jobTitle, company: $0.company, achievement: $0.tasks.joined(separator: "\n"), includedInResume: selectedExperienceIDs.contains($0.id)) })
+        }
     }
 
     private var navigationBar: some View {
@@ -1428,11 +1437,33 @@ struct ResumesView: View {
 
 struct ResumeEditorView: View {
     @Bindable var resume: Resume
+    @Query private var workExperiences: [WorkExperience]
+    @State private var showingAnalysis = false
+
     var body: some View {
-        if resume.structuredDocumentData != nil {
-            if (try? ResumeDocumentConverter.document(for: resume)) != nil { StructuredResumeEditorView(resume: resume) }
-            else { ResumeRecoveryView(resume: resume) }
-        } else { LegacyResumeView(resume: resume) }
+        Group {
+            if resume.structuredDocumentData != nil {
+                if (try? ResumeDocumentConverter.document(for: resume)) != nil { StructuredResumeEditorView(resume: resume) }
+                else { ResumeRecoveryView(resume: resume) }
+            } else { LegacyResumeView(resume: resume) }
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Check job match") { showingAnalysis = true }.accessibilityIdentifier("resume.check-job-match")
+            }
+        }
+        .sheet(isPresented: $showingAnalysis) {
+            ResumeAnalysisSheet(resumeName: resume.name, attributedText: reportText, job: resume.jobTarget, workLibrary: workExperiences.map { ResumeAnalysisWorkEntry(id: $0.id, role: $0.jobTitle, company: $0.company, achievement: $0.tasks.joined(separator: "\n"), includedInResume: resume.linkedWorkExperienceIDs.contains($0.id)) })
+        }
+    }
+
+    private var reportText: NSAttributedString {
+        let result = NSMutableAttributedString()
+        for section in resume.sections.sorted(by: { $0.order < $1.order }) {
+            result.append(section.attributedText)
+            result.append(NSAttributedString(string: "\n"))
+        }
+        return result
     }
 }
 
@@ -1442,24 +1473,325 @@ struct LegacyResumeView: View {
     @State private var editableCopy: Resume?
     @State private var showShare = false
     @State private var shareItems: [Any] = []
+
     var body: some View {
         VStack(spacing: 12) {
             Label("Legacy resume", systemImage: "doc.text").font(.headline)
             Text("The original remains unchanged. Create an editable copy to use section forms.").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button("Create editable copy") { createCopy() }.buttonStyle(CoralButtonStyle()).accessibilityIdentifier("resume.create-editable-copy")
             ResumePagePreview(pdfData: ResumeExportService().pdfData(for: resume))
-        }.padding().background(Color(uiColor: .systemGroupedBackground)).navigationTitle(resume.name).navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { Button("Export PDF") { export(pdf: true) }.accessibilityIdentifier("resume.export-pdf"); Button("Export RTF") { export(pdf: false) }.accessibilityIdentifier("resume.export-rtf") } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Export resume") } }
+        }
+        .padding().background(Color(uiColor: .systemGroupedBackground))
+        .navigationTitle(resume.name).navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Export PDF") { export(pdf: true) }.accessibilityIdentifier("resume.export-pdf")
+                    Button("Export RTF") { export(pdf: false) }.accessibilityIdentifier("resume.export-rtf")
+                } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Export resume")
+            }
+        }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareItems) }
         .sheet(item: $editableCopy) { StructuredResumeEditorView(resume: $0) }
     }
-    private func createCopy() { guard let data = try? ResumeDocumentConverter.document(for: resume).data() else { return }; let copy = Resume(name: "\(resume.name) — editable", jobTarget: resume.jobTarget, workExperienceIDs: resume.linkedWorkExperienceIDs, structuredDocumentData: data); modelContext.insert(copy); try? modelContext.save(); editableCopy = copy }
-    private func export(pdf: Bool) { let service = ResumeExportService(); shareItems = pdf ? [service.pdfData(for: resume)] : [(try? service.rtfData(for: resume)) as Any].compactMap { $0 }; showShare = !shareItems.isEmpty }
+
+    private func createCopy() {
+        guard let data = try? ResumeDocumentConverter.document(for: resume).data() else { return }
+        let copy = Resume(name: "\(resume.name) — editable", jobTarget: resume.jobTarget, workExperienceIDs: resume.linkedWorkExperienceIDs, structuredDocumentData: data)
+        modelContext.insert(copy); try? modelContext.save(); editableCopy = copy
+    }
+
+    private func export(pdf: Bool) {
+        let service = ResumeExportService()
+        shareItems = pdf ? [service.pdfData(for: resume)] : [(try? service.rtfData(for: resume)) as Any].compactMap { $0 }
+        showShare = !shareItems.isEmpty
+    }
 }
 
 struct ResumeRecoveryView: View {
     let resume: Resume
-    var body: some View { VStack(spacing: 16) { ContentUnavailableView("Editable copy unavailable", systemImage: "exclamationmark.triangle", description: Text("The structured data could not be read. The original resume is preserved below.")); ResumePagePreview(pdfData: ResumeExportService().pdfData(for: resume)) }.padding().navigationTitle(resume.name).navigationBarTitleDisplayMode(.inline) }
+    var body: some View {
+        VStack(spacing: 16) {
+            ContentUnavailableView("Editable copy unavailable", systemImage: "exclamationmark.triangle", description: Text("The structured data could not be read. The original resume is preserved below."))
+            ResumePagePreview(pdfData: ResumeExportService().pdfData(for: resume))
+        }
+        .padding()
+        .navigationTitle(resume.name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+struct ResumeAnalysisSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    let resumeName: String
+    let attributedText: NSAttributedString
+    let job: JobTarget?
+    let workLibrary: [ResumeAnalysisWorkEntry]
+    @State private var requirements: [ResumeRequirement] = []
+    @State private var newPhrase = ""
+    @State private var report: ResumeAnalysisReport?
+    @State private var pageTarget = 1
+    @State private var isEditingRequirements = false
+    @State private var isChecklistSaved = false
+    @State private var jobChanged = false
+    @State private var removedPhrases: [String] = []
+    @State private var isSuggesting = false
+    @State private var suggestionTask: Task<Void, Never>?
+    @State private var aiEvidence: [OnDeviceAnalysisSuggestionService.EvidenceSuggestion] = []
+    @State private var message: String?
+
+    private var description: String { job?.rawText ?? "" }
+    private var localSuggestions: [String] { ResumeAnalysisService.suggestedRequirements(from: description).filter { phrase in !requirements.contains { ResumeAnalysisService.normalized($0.phrase) == ResumeAnalysisService.normalized(phrase) } } }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Resume", value: resumeName)
+                    LabeledContent("Target job", value: job.map { [$0.parsedTitle, $0.parsedCompany].compactMap { $0 }.joined(separator: " · ") }.flatMap { $0.isEmpty ? nil : $0 } ?? "No linked job")
+                    LabeledContent("Analyzed", value: report?.analyzedAt.formatted(date: .abbreviated, time: .shortened) ?? "Not checked")
+                }
+
+                if job == nil {
+                    Section("Requirement coverage") {
+                        Text("Job coverage requires a linked target job. Document health is still available below.")
+                            .foregroundStyle(.secondary)
+                    }
+                } else if isEditingRequirements || !isChecklistSaved {
+                    requirementsEditor
+                } else {
+                    coverageSection
+                    Button("Edit requirements") { isEditingRequirements = true }
+                        .accessibilityIdentifier("analysis.edit-requirements")
+                }
+
+                if let report {
+                    Section("Possible supporting evidence") {
+                        if report.relatedWork.isEmpty {
+                            Text("No matching work-library evidence was found. Evidence does not increase phrase coverage automatically.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(report.relatedWork) { entry in
+                                DisclosureGroup {
+                                    Text(entry.achievement)
+                                    Text(entry.includedInResume ? "This evidence is included in the resume." : "Available in the work library but not included in this resume.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("\(entry.role) · \(entry.company)").font(.headline)
+                                        Text("Matches \(entry.matchedRequirement)").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        ForEach(aiEvidence) { suggestion in
+                            DisclosureGroup("Apple Intelligence evidence · Passage \(suggestion.passageID + 1)") {
+                                Text(suggestion.quotation)
+                            }
+                        }
+                        Button(isSuggesting ? "Finding related evidence…" : "Find related evidence") { suggestEvidence() }
+                            .disabled(isSuggesting)
+                            .accessibilityIdentifier("analysis.find-related-evidence")
+                        Text("Evidence is shown for review only; CVee never inserts it automatically.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Section("Document health") {
+                        Picker("Page target", selection: $pageTarget) {
+                            Text("1 page").tag(1)
+                            Text("2 pages").tag(2)
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: pageTarget) { _, _ in recheck() }
+                        ForEach(report.healthFindings) { finding in
+                            Label {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(finding.title)
+                                    Text(finding.detail).font(.caption).foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: finding.kind == .issue ? "exclamationmark.triangle" : finding.kind == .suggestion ? "lightbulb" : "checkmark.circle")
+                                    .foregroundStyle(finding.kind == .issue ? .red : finding.kind == .suggestion ? .orange : .green)
+                            }
+                        }
+                    }
+                }
+                if let message { Text(message).font(.caption).foregroundStyle(.secondary) }
+            }
+            .navigationTitle("Resume report")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { suggestionTask?.cancel(); dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Recheck") { recheck() }.accessibilityIdentifier("analysis.recheck") }
+            }
+            .onAppear { load() }
+            .onDisappear { suggestionTask?.cancel() }
+        }
+    }
+
+    private var coverageSection: some View {
+        Section("Requirement coverage") {
+            if jobChanged {
+                Text("The job description changed. Review and save the retained phrases before coverage is calculated.")
+                    .foregroundStyle(.orange)
+            } else if let report, report.reviewedCount > 0 {
+                Text("\(report.mentionedCount) of \(report.reviewedCount) reviewed requirements mentioned.")
+                    .font(.headline)
+                Text("This is phrase coverage only. It does not verify proficiency, years of experience, certification validity, or eligibility.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach([RequirementMatchStatus.mentioned, .notFound], id: \.rawValue) { status in
+                    let rows = report.requirementFindings.filter { $0.status == status }
+                    if !rows.isEmpty {
+                        DisclosureGroup(status.rawValue) {
+                            ForEach(rows) { finding in
+                                DisclosureGroup {
+                                    Text("Job passage: \(finding.jobPassage)")
+                                    Text("Resume passage: \(finding.resumePassage ?? "No matching passage")")
+                                    Text("Method: \(finding.matchingMethod)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } label: {
+                                    Label(finding.requirement.phrase, systemImage: status == .mentioned ? "checkmark.circle.fill" : "circle")
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text("No requirements reviewed")
+                    .font(.headline)
+            }
+        }
+    }
+
+    private var requirementsEditor: some View {
+        Section("Review requirements") {
+            Text(description)
+                .font(.callout)
+                .textSelection(.enabled)
+            Text("Confirm exact phrases from the job description. Suggestions never affect coverage until added and saved.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if !localSuggestions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        ForEach(localSuggestions, id: \.self) { phrase in
+                            Button(phrase) { add(phrase) }.buttonStyle(.bordered)
+                        }
+                    }
+                }
+            }
+            if !removedPhrases.isEmpty {
+                Text("Removed from the updated job description: \(removedPhrases.joined(separator: ", ")). Re-add only if the new description contains them.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            Button(isSuggesting ? "Suggesting with Apple Intelligence…" : "Suggest with Apple Intelligence") { suggestRequirements() }
+                .disabled(isSuggesting)
+                .accessibilityIdentifier("analysis.suggest-requirements")
+            HStack {
+                TextField("Add exact phrase", text: $newPhrase)
+                    .accessibilityIdentifier("analysis.new-phrase")
+                Button("Add") { add(newPhrase); newPhrase = "" }
+                    .accessibilityIdentifier("analysis.add-phrase")
+                    .disabled(ResumeAnalysisService.match(newPhrase, in: description) == nil)
+            }
+            ForEach(requirements) { requirement in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(requirement.phrase)
+                        Text(requirement.sourcePassage).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    Spacer()
+                    Button("Remove", systemImage: "minus.circle") { requirements.removeAll { $0.id == requirement.id } }
+                        .labelStyle(.iconOnly)
+                        .accessibilityLabel("Remove \(requirement.phrase)")
+                }
+            }
+            Button("Save requirements") { saveRequirements() }
+                .buttonStyle(CoralButtonStyle())
+                .accessibilityIdentifier("analysis.save-requirements")
+        }
+    }
+
+    private func load() {
+        guard let job else { recheck(); return }
+        if let checklist = JobRequirementChecklist.load(job.requirementChecklistData) {
+            let savedPhrases = checklist.requirements
+            requirements = checklist.requirements.filter { ResumeAnalysisService.match($0.phrase, in: job.rawText) != nil }
+            removedPhrases = savedPhrases.filter { ResumeAnalysisService.match($0.phrase, in: job.rawText) == nil }.map(\.phrase)
+            jobChanged = checklist.requiresReview(for: job.rawText)
+            isChecklistSaved = !jobChanged
+            if jobChanged { isEditingRequirements = true }
+        } else {
+            isChecklistSaved = false
+            isEditingRequirements = true
+        }
+        recheck()
+    }
+
+    private func add(_ phrase: String) {
+        let trimmed = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, ResumeAnalysisService.match(trimmed, in: description) != nil, !requirements.contains(where: { ResumeAnalysisService.normalized($0.phrase) == ResumeAnalysisService.normalized(trimmed) }) else { return }
+        requirements.append(ResumeRequirement(phrase: trimmed, sourcePassage: ResumeAnalysisService.passage(containing: trimmed, in: description)))
+    }
+
+    private func saveRequirements() {
+        guard let job else { return }
+        let checklist = JobRequirementChecklist(description: job.rawText, requirements: requirements)
+        do {
+            job.requirementChecklistData = try checklist.data()
+            try modelContext.save()
+            isChecklistSaved = true
+            jobChanged = false
+            removedPhrases = []
+            isEditingRequirements = false
+            message = "Requirements saved for this job and will be reused across resumes."
+            recheck()
+        } catch { message = "Requirements could not be saved: \(error.localizedDescription)" }
+    }
+
+    private func recheck() {
+        let snapshot = ResumeAnalysisSnapshot(resumeName: resumeName, attributedResume: attributedText, jobDescription: job?.rawText, requirements: isChecklistSaved && !jobChanged ? requirements : [], workLibrary: workLibrary, pageTarget: pageTarget)
+        report = ResumeAnalysisService().analyze(snapshot)
+    }
+
+    private func suggestRequirements() {
+        guard !isSuggesting else { return }
+        suggestionTask?.cancel()
+        isSuggesting = true
+        suggestionTask = Task { @MainActor in
+            do {
+                let values = try await OnDeviceAnalysisSuggestionService().suggestRequirements(from: description)
+                guard !Task.isCancelled else { return }
+                values.forEach { add($0.phrase) }
+                message = "Apple Intelligence suggestions were added for your review."
+            } catch is CancellationError { return
+            } catch { if !Task.isCancelled { message = error.localizedDescription } }
+            if !Task.isCancelled { isSuggesting = false }
+        }
+    }
+
+    private func suggestEvidence() {
+        guard let report, report.reviewedCount > 0 else {
+            message = "Save at least one requirement before finding related evidence."
+            return
+        }
+        suggestionTask?.cancel()
+        isSuggesting = true
+        suggestionTask = Task { @MainActor in
+            do {
+                aiEvidence = try await OnDeviceAnalysisSuggestionService().suggestEvidence(requirements: requirements, passages: workLibrary.map(\.achievement))
+                guard !Task.isCancelled else { return }
+                message = aiEvidence.isEmpty ? "Apple Intelligence found no additional evidence." : "Apple Intelligence evidence is ready for review."
+            } catch is CancellationError { return
+            } catch { if !Task.isCancelled { message = error.localizedDescription } }
+            if !Task.isCancelled { isSuggesting = false }
+        }
+    }
 }
 
 struct ResumePreviewView: View {
