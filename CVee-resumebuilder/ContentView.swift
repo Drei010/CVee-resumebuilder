@@ -1608,12 +1608,11 @@ struct NewResumeView: View {
                         Button("Check job match") { showingAnalysis = true }
                             .buttonStyle(.bordered)
                             .accessibilityIdentifier("wizard.check-job-match")
+                        Button(isSaved ? "Saved to Resumes" : "Save Resume") { saveGeneratedResume() }
+                            .buttonStyle(CoralButtonStyle())
+                            .disabled(isSaved || generatedDraft == nil)
+                            .accessibilityIdentifier("wizard.save-resume")
                     }
-                    Button(isSaved ? "Saved to Resumes" : "Save Resume") { saveGeneratedResume() }
-                        .buttonStyle(CoralButtonStyle())
-                        .disabled(isSaved || generatedDraft == nil)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityIdentifier("wizard.save-resume")
                     if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
                 }
             }

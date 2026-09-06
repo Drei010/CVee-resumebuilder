@@ -202,6 +202,9 @@ final class ResumeWizardUITests: XCTestCase {
         capture(app, "resume-preview-before-edit")
         let checkMatch = app.buttons["wizard.check-job-match"]
         XCTAssertTrue(checkMatch.waitForExistence(timeout: timeout))
+        let saveResume = app.buttons["wizard.save-resume"]
+        XCTAssertTrue(saveResume.waitForExistence(timeout: timeout))
+        XCTAssertLessThan(abs(saveResume.frame.midY - checkMatch.frame.midY), 8)
         checkMatch.tap()
         XCTAssertTrue(app.navigationBars["Resume report"].waitForExistence(timeout: timeout))
         let requirement = app.textFields["analysis.new-phrase"]
