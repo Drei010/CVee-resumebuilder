@@ -1920,6 +1920,7 @@ struct ResumeAnalysisSheet: View {
             } else if let report, report.reviewedCount > 0 {
                 Text("\(report.mentionedCount) of \(report.reviewedCount) reviewed requirements mentioned.")
                     .font(.headline)
+                    .accessibilityIdentifier("\(report.mentionedCount) of \(report.reviewedCount) reviewed requirements mentioned.")
                 Text("This is phrase coverage only. It does not verify proficiency, years of experience, certification validity, or eligibility.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
