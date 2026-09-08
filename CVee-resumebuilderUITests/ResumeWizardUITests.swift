@@ -219,7 +219,8 @@ final class ResumeWizardUITests: XCTestCase {
         requirement.typeText("Python")
         app.buttons["analysis.add-phrase"].tap()
         app.buttons["analysis.save-requirements"].tap()
-        XCTAssertTrue(app.staticTexts["1 of 1 reviewed requirements mentioned."].waitForExistence(timeout: timeout))
+        let coverage = app.staticTexts.matching(NSPredicate(format: "label == %@", "1 of 1 reviewed requirements mentioned.")).firstMatch
+        XCTAssertTrue(coverage.waitForExistence(timeout: timeout))
         app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["wizard.save-resume"].waitForExistence(timeout: timeout))
         app.buttons["wizard.edit-resume"].tap()
