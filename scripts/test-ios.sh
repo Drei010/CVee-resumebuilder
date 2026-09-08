@@ -29,6 +29,12 @@ if [[ -z "$DESTINATION" ]]; then
   exit 1
 fi
 
+SIMULATOR_ID="${DESTINATION##*id=}"
+if [[ "$SIMULATOR_ID" != "$DESTINATION" ]]; then
+  xcrun simctl boot "$SIMULATOR_ID" 2>/dev/null || true
+  xcrun simctl bootstatus "$SIMULATOR_ID" -b
+fi
+
 COMMON_ARGS=(
   -project "$PROJECT"
   -scheme "$SCHEME"
