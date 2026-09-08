@@ -35,7 +35,6 @@ struct CVee_resumebuilderApp: App {
             context.insert(experience)
             context.insert(job)
             context.insert(resume)
-            try? context.save()
         }
     }
 
