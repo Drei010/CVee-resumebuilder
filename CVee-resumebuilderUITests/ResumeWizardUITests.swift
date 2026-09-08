@@ -116,8 +116,9 @@ final class ResumeWizardUITests: XCTestCase {
         fullName.tap()
         fullName.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64))
         fullName.typeText("Test User")
+        fullName.typeText("\n")
         let email = app.textFields["wizard.email"]
-        XCTAssertTrue(email.waitForExistence(timeout: timeout))
+        XCTAssertTrue(revealBelow(email, in: app))
         email.tap()
         email.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64))
         email.typeText("test@example.com")
@@ -193,9 +194,11 @@ final class ResumeWizardUITests: XCTestCase {
         job.firstMatch.tap()
         app.buttons["wizard.next"].tap()
         XCTAssertTrue(app.buttons["wizard.edit-profile"].waitForExistence(timeout: timeout))
-        XCTAssertTrue(app.buttons["wizard.edit-experience"].exists)
-        XCTAssertTrue(app.buttons["wizard.edit-job"].exists)
-        app.buttons["wizard.edit-job"].tap()
+        let editExperience = app.buttons["wizard.edit-experience"]
+        XCTAssertTrue(editExperience.waitForExistence(timeout: timeout))
+        let editJob = app.buttons["wizard.edit-job"]
+        XCTAssertTrue(editJob.waitForExistence(timeout: timeout))
+        editJob.tap()
         XCTAssertTrue(app.descendants(matching: .any)["wizard.job-description"].waitForExistence(timeout: timeout))
         app.buttons["wizard.next"].tap()
         XCTAssertTrue(app.buttons["wizard.generate"].waitForExistence(timeout: timeout))
@@ -218,30 +221,35 @@ final class ResumeWizardUITests: XCTestCase {
         requirement.tap()
         requirement.typeText("Python")
         app.buttons["analysis.add-phrase"].tap()
-        app.buttons["analysis.save-requirements"].tap()
-        let coverage = app.staticTexts.matching(NSPredicate(format: "label == %@", "1 of 1 reviewed requirements mentioned.")).firstMatch
-        XCTAssertTrue(coverage.waitForExistence(timeout: timeout))
+        requirement.typeText("\n")
+        dismissKeyboard(in: app)
+        let saveRequirements = app.buttons["analysis.save-requirements"]
+        XCTAssertTrue(tapWhenHittable(saveRequirements, in: app))
+        let coverage = app.staticTexts["analysis.coverage-summary"]
+        XCTAssertTrue(reveal(coverage, in: app))
+        XCTAssertEqual(coverage.label, "1 of 1 reviewed requirements mentioned.")
         app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["wizard.save-resume"].waitForExistence(timeout: timeout))
-        app.buttons["wizard.edit-resume"].tap()
+        XCTAssertTrue(tapAction(app.buttons["wizard.edit-resume"], in: app))
         let formattedEditor = app.descendants(matching: .any)["wizard.formatted-editor"]
         XCTAssertTrue(formattedEditor.waitForExistence(timeout: timeout))
         formattedEditor.tap()
         formattedEditor.typeText(" PREVIEW_SENTINEL")
-        app.buttons["wizard.edit-resume"].tap()
+        dismissKeyboard(in: app)
+        XCTAssertTrue(tapAction(app.buttons["wizard.edit-resume"], in: app))
         assertPreviewContainsText(app, preview, "PREVIEW")
         for _ in 0..<4 {
-            app.buttons["wizard.edit-resume"].tap()
+            XCTAssertTrue(tapAction(app.buttons["wizard.edit-resume"], in: app))
             XCTAssertTrue(app.descendants(matching: .any)["wizard.formatted-editor"].waitForExistence(timeout: timeout))
-            app.buttons["wizard.edit-resume"].tap()
+            XCTAssertTrue(tapAction(app.buttons["wizard.edit-resume"], in: app))
         }
         capture(app, "resume-preview-after-edit")
-        app.buttons["wizard.edit-resume"].tap()
+        XCTAssertTrue(tapAction(app.buttons["wizard.edit-resume"], in: app))
         XCTAssertTrue(app.buttons["LaTeX"].waitForExistence(timeout: timeout))
-        app.buttons["LaTeX"].tap()
+        XCTAssertTrue(tapAction(app.buttons["LaTeX"], in: app))
         XCTAssertTrue(app.descendants(matching: .any)["wizard.latex-editor"].waitForExistence(timeout: timeout))
-        app.buttons["wizard.edit-resume"].tap()
-        app.buttons["wizard.save-resume"].tap()
+        XCTAssertTrue(tapAction(app.buttons["wizard.edit-resume"], in: app))
+        XCTAssertTrue(tapAction(app.buttons["wizard.save-resume"], in: app))
 
         let resumesTab = app.buttons["Resumes"].firstMatch
         XCTAssertTrue(resumesTab.waitForExistence(timeout: timeout))
@@ -274,5 +282,59 @@ final class ResumeWizardUITests: XCTestCase {
         try? VNImageRequestHandler(cgImage: crop, options: [:]).perform([request])
         let recognized = request.results?.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ") ?? ""
         XCTAssertTrue(recognized.localizedCaseInsensitiveContains(expected), "Preview OCR did not find '\(expected)' in '\(recognized)'", file: file, line: line)
+    }
+
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        for _ in 0..<5 {
+            if element.waitForExistence(timeout: 2) { return true }
+            app.swipeDown()
+        }
+        return element.waitForExistence(timeout: timeout)
+    }
+
+    private func revealBelow(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        for _ in 0..<5 {
+            if element.waitForExistence(timeout: 2) { return true }
+            app.swipeUp()
+        }
+        return element.waitForExistence(timeout: timeout)
+    }
+
+    private func tapWhenHittable(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        for _ in 0..<5 {
+            if element.waitForExistence(timeout: 2) {
+                if element.isHittable {
+                    element.tap()
+                    return true
+                }
+                dismissKeyboard(in: app)
+                if element.isHittable {
+                    element.tap()
+                    return true
+                }
+            }
+            app.swipeUp()
+        }
+        return element.waitForExistence(timeout: timeout) && element.isHittable
+    }
+
+    private func tapAction(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        if app.frame.width < 700 {
+            guard element.waitForExistence(timeout: timeout) else { return false }
+            element.tap()
+            return true
+        }
+        return tapWhenHittable(element, in: app)
+    }
+
+    private func dismissKeyboard(in app: XCUIApplication) {
+        if app.keyboards.element.waitForExistence(timeout: 1) {
+            let hide = app.keyboards.buttons["Hide keyboard"]
+            if hide.waitForExistence(timeout: 1) { hide.tap(); return }
+            let done = app.keyboards.buttons["Done"]
+            if done.waitForExistence(timeout: 1) { done.tap(); return }
+        }
+        let globalHide = app.buttons["Hide keyboard"]
+        if globalHide.waitForExistence(timeout: 1) { globalHide.tap() }
     }
 }

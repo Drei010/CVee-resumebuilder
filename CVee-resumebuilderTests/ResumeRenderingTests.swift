@@ -105,6 +105,25 @@ final class ResumeRenderingTests: XCTestCase {
         XCTAssertFalse(report.relatedWork[0].includedInResume)
     }
 
+    func testLightweightAnalysisUpdatesCoverageWithoutDocumentHealth() {
+        let requirement = ResumeRequirement(phrase: "Python", sourcePassage: "Python required")
+        let snapshot = ResumeAnalysisSnapshot(
+            resumeName: "Test",
+            attributedResume: NSAttributedString(string: "Taylor Example\nSUMMARY\nPython"),
+            jobDescription: "Python required.",
+            requirements: [requirement],
+            workLibrary: [ResumeAnalysisWorkEntry(id: UUID(), role: "Engineer", company: "Example", achievement: "Built Python tools", includedInResume: false)],
+            pageTarget: 1
+        )
+
+        let report = ResumeAnalysisService().analyze(snapshot, includeDocumentHealth: false)
+
+        XCTAssertEqual(report.reviewedCount, 1)
+        XCTAssertEqual(report.mentionedCount, 1)
+        XCTAssertEqual(report.relatedWork.count, 1)
+        XCTAssertTrue(report.healthFindings.isEmpty)
+    }
+
     func testAnalysisShowsNoRequirementsReviewedAndHealthOnlyReport() {
         let report = ResumeAnalysisService().analyze(ResumeAnalysisSnapshot(
             resumeName: "Test",

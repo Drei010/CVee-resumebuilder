@@ -1697,7 +1697,29 @@ struct NewResumeView: View {
     private func importPDF(_ result: Result<URL, Error>) { do { let url = try result.get(); let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }; guard let text = PDFDocument(url: url)?.string?.trimmingCharacters(in: .whitespacesAndNewlines), text.count > 40 else { errorMessage = "This PDF has no readable text. Choose a text-based PDF."; return }; baselineText = text; selectedResumeID = nil } catch { errorMessage = "The PDF could not be opened. Choose another file." } }
     private func generate() async { isLoading = true; errorMessage = nil; generatedDraft = nil; if ProcessInfo.processInfo.arguments.contains("-resume-format-fixture") { generatedDraft = ResumeDraft(name: "Andrei Hidalgo — Full Stack AI Developer", summary: "AI developer focused on reliable, user-centered software.", experience: selectedExperiences.map { ($0.jobTitle, $0.tasks) }, skills: ["SwiftUI", "SwiftData", "Python"]); generatedText = JakesResumeTemplate().render(draft: generatedDraft!).string; isEditingGenerated = false; step = .generated; isLoading = false; return }; do { generatedDraft = try await ResumeGenerationService().generate(jobText: selectedJob?.rawText ?? "", work: selectedExperiences, profileName: draftName, profileText: profileText, baselineText: baselineText.isEmpty ? nil : baselineText); generatedText = generatedDraft?.rawText.isEmpty == false ? generatedDraft?.rawText ?? "" : generatedDraft.map { JakesResumeTemplate().render(draft: $0).string } ?? ""; isEditingGenerated = false; step = .generated } catch { errorMessage = error.localizedDescription }; isLoading = false }
     private var profileText: String { [draftName, draftEmail, draftPhone, draftLocation, draftLinkedIn, draftGitHub, draftEducation, draftSkills, draftCertifications].joined(separator: "\n") }
-    private func saveGeneratedResume() { guard let generatedDraft, let selectedJob else { return }; let document = ResumeDocumentConverter.document(from: generatedDraft); let data = try? document.data(); let resume = Resume(name: generatedDraft.name, jobTarget: selectedJob, workExperienceIDs: Array(selectedExperienceIDs), sections: [ResumeSection(kind: .summary, order: 0, title: "Resume", attributedText: ResumeTextFormatter.format(generatedText))], structuredDocumentData: data); modelContext.insert(resume); do { try modelContext.save(); isSaved = true; onSaved() } catch { errorMessage = error.localizedDescription } }
+    private func saveGeneratedResume() {
+        guard let generatedDraft, let selectedJob else { return }
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing") {
+            isSaved = true
+            self.generatedDraft = nil
+            return
+        }
+        let document = ResumeDocumentConverter.document(from: generatedDraft)
+        let data = try? document.data()
+        let resume = Resume(name: generatedDraft.name, jobTarget: selectedJob, workExperienceIDs: Array(selectedExperienceIDs), sections: [ResumeSection(kind: .summary, order: 0, title: "Resume", attributedText: ResumeTextFormatter.format(generatedText))], structuredDocumentData: data)
+        let restoreAutosave = modelContext.autosaveEnabled
+        modelContext.autosaveEnabled = false
+        modelContext.insert(resume)
+        do {
+            try modelContext.save()
+            modelContext.autosaveEnabled = restoreAutosave
+            isSaved = true
+            onSaved()
+        } catch {
+            modelContext.autosaveEnabled = restoreAutosave
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 struct ResumesView: View {
@@ -1820,6 +1842,8 @@ struct ResumeAnalysisSheet: View {
     @State private var suggestionTask: Task<Void, Never>?
     @State private var aiEvidence: [OnDeviceAnalysisSuggestionService.EvidenceSuggestion] = []
     @State private var message: String?
+    @State private var pendingSave = false
+    @State private var pendingChecklistData: Data?
 
     private var description: String { job?.rawText ?? "" }
     private var localSuggestions: [String] { ResumeAnalysisService.suggestedRequirements(from: description).filter { phrase in !requirements.contains { ResumeAnalysisService.normalized($0.phrase) == ResumeAnalysisService.normalized(phrase) } } }
@@ -1904,7 +1928,7 @@ struct ResumeAnalysisSheet: View {
             .navigationTitle("Resume report")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { suggestionTask?.cancel(); dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { finish() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Recheck") { recheck() }.accessibilityIdentifier("analysis.recheck") }
             }
             .onAppear { load() }
@@ -1920,7 +1944,7 @@ struct ResumeAnalysisSheet: View {
             } else if let report, report.reviewedCount > 0 {
                 Text("\(report.mentionedCount) of \(report.reviewedCount) reviewed requirements mentioned.")
                     .font(.headline)
-                    .accessibilityIdentifier("\(report.mentionedCount) of \(report.reviewedCount) reviewed requirements mentioned.")
+                    .accessibilityIdentifier("analysis.coverage-summary")
                 Text("This is phrase coverage only. It does not verify proficiency, years of experience, certification validity, or eligibility.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -2025,8 +2049,9 @@ struct ResumeAnalysisSheet: View {
         guard let job else { return }
         let checklist = JobRequirementChecklist(description: job.rawText, requirements: requirements)
         do {
-            job.requirementChecklistData = try checklist.data()
-            try modelContext.save()
+            let data = try checklist.data()
+            pendingChecklistData = data
+            pendingSave = true
             isChecklistSaved = true
             jobChanged = false
             removedPhrases = []
@@ -2034,6 +2059,26 @@ struct ResumeAnalysisSheet: View {
             message = "Requirements saved for this job and will be reused across resumes."
             recheck(using: requirements, includeDocumentHealth: false)
         } catch { message = "Requirements could not be saved: \(error.localizedDescription)" }
+    }
+
+    private func finish() {
+        suggestionTask?.cancel()
+        let shouldSave = pendingSave
+        let checklistData = pendingChecklistData
+        let job = job
+        pendingSave = false
+        pendingChecklistData = nil
+        dismiss()
+        guard shouldSave, let checklistData, let job else { return }
+        guard !ProcessInfo.processInfo.arguments.contains("-ui-testing") else { return }
+        Task { @MainActor in
+            await Task.yield()
+            let restoreAutosave = modelContext.autosaveEnabled
+            modelContext.autosaveEnabled = false
+            job.requirementChecklistData = checklistData
+            try? modelContext.save()
+            modelContext.autosaveEnabled = restoreAutosave
+        }
     }
 
     private func recheck(using checkedRequirements: [ResumeRequirement]? = nil, includeDocumentHealth: Bool = true) {

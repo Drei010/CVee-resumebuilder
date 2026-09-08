@@ -34,11 +34,15 @@ COMMON_ARGS=(
 )
 
 echo "Building UI tests for $DESTINATION"
-xcodebuild "${COMMON_ARGS[@]}" build-for-testing
+xcodebuild "${COMMON_ARGS[@]}" build-for-testing 2>&1 | tee "$DIAGNOSTICS_DIR/build.log"
 
 echo "Running UI tests for $DESTINATION"
 rm -rf "$RESULT_BUNDLE"
 xcodebuild "${COMMON_ARGS[@]}" \
   -resultBundlePath "$RESULT_BUNDLE" \
   -enableCodeCoverage YES \
-  test-without-building
+  test-without-building 2>&1 | tee "$DIAGNOSTICS_DIR/test.log"
+
+if [[ -d "$RESULT_BUNDLE" ]]; then
+  xcrun xcresulttool get test-results summary --path "$RESULT_BUNDLE" > "$DIAGNOSTICS_DIR/test-summary.json" || true
+fi
