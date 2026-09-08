@@ -2032,14 +2032,16 @@ struct ResumeAnalysisSheet: View {
             removedPhrases = []
             isEditingRequirements = false
             message = "Requirements saved for this job and will be reused across resumes."
-            recheck(using: requirements)
+            recheck(using: requirements, includeDocumentHealth: false)
         } catch { message = "Requirements could not be saved: \(error.localizedDescription)" }
     }
 
-    private func recheck(using checkedRequirements: [ResumeRequirement]? = nil) {
+    private func recheck(using checkedRequirements: [ResumeRequirement]? = nil, includeDocumentHealth: Bool = true) {
         let activeRequirements = checkedRequirements ?? (isChecklistSaved && !jobChanged ? requirements : [])
         let snapshot = ResumeAnalysisSnapshot(resumeName: resumeName, attributedResume: attributedText, jobDescription: job?.rawText, requirements: activeRequirements, workLibrary: workLibrary, pageTarget: pageTarget)
-        report = ResumeAnalysisService().analyze(snapshot)
+        let previousHealth = report?.healthFindings ?? []
+        let updated = ResumeAnalysisService().analyze(snapshot, includeDocumentHealth: includeDocumentHealth)
+        report = includeDocumentHealth || previousHealth.isEmpty ? updated : ResumeAnalysisReport(analyzedAt: updated.analyzedAt, requirementFindings: updated.requirementFindings, relatedWork: updated.relatedWork, healthFindings: previousHealth, pageTarget: updated.pageTarget)
     }
 
     private func suggestRequirements() {

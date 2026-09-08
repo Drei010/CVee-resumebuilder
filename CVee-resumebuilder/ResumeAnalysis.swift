@@ -107,7 +107,7 @@ struct ResumeAnalysisService {
     static let matchingMethod = "Case-insensitive, Unicode-normalized whole-term phrase match"
     static let headings = Set(["WORK EXPERIENCE", "EXPERIENCE", "PROJECTS", "SKILLS", "SKILLS & ABILITIES", "CERTIFICATIONS", "EDUCATION", "SUMMARY"])
 
-    func analyze(_ snapshot: ResumeAnalysisSnapshot, pdfData: Data? = nil) -> ResumeAnalysisReport {
+    func analyze(_ snapshot: ResumeAnalysisSnapshot, pdfData: Data? = nil, includeDocumentHealth: Bool = true) -> ResumeAnalysisReport {
         let resumeText = snapshot.attributedResume.string
         let requirements = Self.deduplicated(snapshot.requirements)
         let findings = requirements.map { requirement in
@@ -121,7 +121,8 @@ struct ResumeAnalysisService {
             return RelatedWorkFinding(id: entry.id, role: entry.role, company: entry.company, achievement: entry.achievement, includedInResume: entry.includedInResume, matchedRequirement: requirement.phrase)
         }
 
-        return ResumeAnalysisReport(analyzedAt: .now, requirementFindings: findings, relatedWork: related, healthFindings: healthFindings(for: snapshot, pdfData: pdfData), pageTarget: snapshot.pageTarget)
+        let health = includeDocumentHealth ? healthFindings(for: snapshot, pdfData: pdfData) : []
+        return ResumeAnalysisReport(analyzedAt: .now, requirementFindings: findings, relatedWork: related, healthFindings: health, pageTarget: snapshot.pageTarget)
     }
 
     func healthFindings(for snapshot: ResumeAnalysisSnapshot, pdfData suppliedPDF: Data? = nil) -> [HealthFinding] {
