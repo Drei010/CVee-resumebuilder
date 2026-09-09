@@ -317,7 +317,9 @@ final class ResumeWizardUITests: XCTestCase {
             }
             app.swipeUp()
         }
-        return element.waitForExistence(timeout: timeout) && element.isHittable && element.isEnabled
+        guard element.waitForExistence(timeout: timeout), element.isHittable, element.isEnabled else { return false }
+        element.tap()
+        return true
     }
 
     private func tapAction(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
