@@ -220,11 +220,17 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(requirement.waitForExistence(timeout: timeout))
         requirement.tap()
         requirement.typeText("Python")
-        app.buttons["analysis.add-phrase"].tap()
+        let addPhrase = app.buttons["analysis.add-phrase"]
+        XCTAssertTrue(tapWhenHittable(addPhrase, in: app))
+        XCTAssertTrue(app.staticTexts["Python"].waitForExistence(timeout: timeout))
         requirement.typeText("\n")
         dismissKeyboard(in: app)
-        let saveRequirements = app.buttons["analysis.save-requirements"]
-        XCTAssertTrue(tapWhenHittable(saveRequirements, in: app))
+        let toolbarSave = app.buttons["analysis.save-requirements-toolbar"]
+        if toolbarSave.waitForExistence(timeout: 2) {
+            XCTAssertTrue(tapAction(toolbarSave, in: app))
+        } else {
+            XCTAssertTrue(tapWhenHittable(app.buttons["analysis.save-requirements"], in: app))
+        }
         let coverage = app.staticTexts["analysis.coverage-summary"]
         XCTAssertTrue(reveal(coverage, in: app))
         XCTAssertEqual(coverage.label, "1 of 1 reviewed requirements mentioned.")
@@ -303,19 +309,21 @@ final class ResumeWizardUITests: XCTestCase {
     private func tapWhenHittable(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
         for _ in 0..<5 {
             if element.waitForExistence(timeout: 2) {
-                if element.isHittable {
+                if element.isHittable && element.isEnabled {
                     element.tap()
                     return true
                 }
                 dismissKeyboard(in: app)
-                if element.isHittable {
+                if element.isHittable && element.isEnabled {
                     element.tap()
                     return true
                 }
             }
             app.swipeUp()
         }
-        return element.waitForExistence(timeout: timeout) && element.isHittable
+        guard element.waitForExistence(timeout: timeout), element.isHittable, element.isEnabled else { return false }
+        element.tap()
+        return true
     }
 
     private func tapAction(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
