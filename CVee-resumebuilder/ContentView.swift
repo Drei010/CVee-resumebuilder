@@ -1354,7 +1354,16 @@ struct TaskImportView: View {
 
 private enum ResumeWizardStep: Int, CaseIterable {
     case start, workLibrary, jobDescription, summary, generated
-    var title: String { ["Start", "Work Library", "Job Description", "Summary", "Generated"][rawValue] }
+    var title: String { ["Profile", "Experience", "Target Job", "Review", "Resume"][rawValue] }
+    var guidance: String {
+        [
+            "Confirm the details that should appear on your resume.",
+            "Choose the work that best supports this application.",
+            "Match this resume to one saved target job.",
+            "Review your inputs before generating.",
+            "Edit, check, and save your tailored resume."
+        ][rawValue]
+    }
 }
 
 private enum ResumeStartMode: String, CaseIterable {
@@ -1409,8 +1418,12 @@ struct NewResumeView: View {
     @State private var isEditingGenerated = false
     @State private var isSaved = false
     @State private var showingAnalysis = false
+    @State private var showingOptionalProfile = false
+    @FocusState private var focusedField: WizardField?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private enum EditorMode { case formatted, latex }
+    private enum EditorMode: String, CaseIterable, Hashable { case formatted = "Formatted", latex = "LaTeX" }
+    private enum WizardField: Hashable { case name, email, phone, location, linkedin, github, education, skills, certifications }
 
     init(onSaved: @escaping () -> Void = {}) { self.onSaved = onSaved }
 
@@ -1446,8 +1459,7 @@ struct NewResumeView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 40).onEnded { value in handleSwipe(value.translation) })
+            .transition(reduceMotion ? .opacity : .move(edge: step.rawValue > 0 ? .trailing : .leading).combined(with: .opacity))
             navigationBar
         }
         .navigationTitle("Resume Wizard")
@@ -1476,6 +1488,9 @@ struct NewResumeView: View {
                         .frame(height: 2)
                 }
             }
+            Text(step.guidance)
+                .font(.caption)
+                .foregroundStyle(CVeeColors.secondary)
         }
         .padding(.horizontal, 18).padding(.vertical, 12)
         .accessibilityElement(children: .ignore)
@@ -1488,16 +1503,19 @@ struct NewResumeView: View {
             Section { Picker("Start method", selection: $startMode) { ForEach(ResumeStartMode.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented) }
             if startMode == .fresh {
                 Section("Your identity") {
-                    if !profileIsValid { Text("Full name and email are required.").font(.caption).foregroundStyle(CVeeColors.secondary) }
-                    TextField("Full name", text: $draftName, prompt: Text("Full name").foregroundStyle(CVeeColors.secondary)).textContentType(.name).accessibilityIdentifier("wizard.full-name")
-                    TextField("Email", text: $draftEmail, prompt: Text("Email").foregroundStyle(CVeeColors.secondary)).textContentType(.emailAddress).keyboardType(.emailAddress).accessibilityIdentifier("wizard.email")
-                    TextField("Phone", text: $draftPhone, prompt: Text("Phone").foregroundStyle(CVeeColors.secondary)).textContentType(.telephoneNumber).keyboardType(.phonePad)
-                    TextField("Location", text: $draftLocation, prompt: Text("Location").foregroundStyle(CVeeColors.secondary))
-                    TextField("LinkedIn URL", text: $draftLinkedIn, prompt: Text("LinkedIn URL").foregroundStyle(CVeeColors.secondary)).textInputAutocapitalization(.never).keyboardType(.URL)
-                    TextField("GitHub URL", text: $draftGitHub, prompt: Text("GitHub URL").foregroundStyle(CVeeColors.secondary)).textInputAutocapitalization(.never).keyboardType(.URL)
-                    TextField("Education", text: $draftEducation, prompt: Text("Education").foregroundStyle(CVeeColors.secondary))
-                    TextField("Skills & abilities", text: $draftSkills, prompt: Text("Skills & abilities").foregroundStyle(CVeeColors.secondary))
-                    TextField("Certifications", text: $draftCertifications, prompt: Text("Certifications").foregroundStyle(CVeeColors.secondary))
+                    Text("Required fields are marked. You can add the rest when ready.").font(.caption).foregroundStyle(CVeeColors.secondary)
+                    LabeledContent { TextField("Full name", text: $draftName).focused($focusedField, equals: .name).textContentType(.name).accessibilityIdentifier("wizard.full-name") } label: { Text("Full name").fontWeight(.medium) }
+                    LabeledContent { TextField("Email", text: $draftEmail).focused($focusedField, equals: .email).textContentType(.emailAddress).keyboardType(.emailAddress).accessibilityIdentifier("wizard.email") } label: { Text("Email").fontWeight(.medium) }
+                    if !profileIsValid { Text("Add your full name and email to continue.").font(.caption).foregroundStyle(.orange).accessibilityIdentifier("wizard.profile-validation") }
+                    DisclosureGroup("Optional details", isExpanded: $showingOptionalProfile) {
+                        LabeledContent("Phone") { TextField("Phone", text: $draftPhone).focused($focusedField, equals: .phone).textContentType(.telephoneNumber).keyboardType(.phonePad) }
+                        LabeledContent("Location") { TextField("Location", text: $draftLocation).focused($focusedField, equals: .location) }
+                        LabeledContent("LinkedIn URL") { TextField("LinkedIn URL", text: $draftLinkedIn).focused($focusedField, equals: .linkedin).textInputAutocapitalization(.never).keyboardType(.URL) }
+                        LabeledContent("GitHub URL") { TextField("GitHub URL", text: $draftGitHub).focused($focusedField, equals: .github).textInputAutocapitalization(.never).keyboardType(.URL) }
+                        LabeledContent("Education") { TextField("Education", text: $draftEducation).focused($focusedField, equals: .education) }
+                        LabeledContent("Skills & abilities") { TextField("Skills & abilities", text: $draftSkills).focused($focusedField, equals: .skills) }
+                        LabeledContent("Certifications") { TextField("Certifications", text: $draftCertifications).focused($focusedField, equals: .certifications) }
+                    }
                 }
             } else {
                 Section("Resume baseline") {
@@ -1511,7 +1529,6 @@ struct NewResumeView: View {
 
     private var workLibraryPage: some View {
         Form {
-            Section { TextField("Search tasks", text: $taskSearch).textInputAutocapitalization(.never) }
             Section {
                 HStack {
                     Text("\(selectedExperiences.count) selected")
@@ -1529,12 +1546,11 @@ struct NewResumeView: View {
                 ForEach(filteredExperiences) { experience in Button { toggleExperience(experience.id) } label: { HStack { VStack(alignment: .leading) { Text(experience.jobTitle).font(.subheadline.weight(.medium)); MetadataPill(text: experience.company).foregroundStyle(.secondary); Text(experience.tasks.first ?? "No task details").font(.caption).foregroundStyle(.secondary).lineLimit(2) }; Spacer(); SelectionCircle(isSelected: selectedExperienceIDs.contains(experience.id)) } }.buttonStyle(.plain).accessibilityValue(selectedExperienceIDs.contains(experience.id) ? "Selected" : "Not selected") }
                 Menu { Button("Add manually") { taskCountBeforeAdd = experiences.count; showingAddTask = true }; Button("Import Tasks List") { showingImport = true } } label: { Label("Add task", systemImage: "plus") }
             }
-        }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.work-library")
+        }.formStyle(.grouped).modifier(WorkspaceSurface()).searchable(text: $taskSearch, prompt: "Search experience").accessibilityIdentifier("wizard.work-library")
     }
 
     private var jobDescriptionPage: some View {
         Form {
-            Section { TextField("Search saved jobs", text: $jobSearch).textInputAutocapitalization(.never) }
             Section("Job descriptions") {
                 if filteredJobs.isEmpty { ContentUnavailableView("No saved jobs", systemImage: "briefcase", description: Text("Add a job description to continue.")) }
                 ForEach(filteredJobs) { job in
@@ -1557,16 +1573,27 @@ struct NewResumeView: View {
                 }
                 Button { jobCountBeforeAdd = jobs.count; showingAddJob = true } label: { Label("Add job", systemImage: "plus") }
             }
-        }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.job-description")
+        }.formStyle(.grouped).modifier(WorkspaceSurface()).searchable(text: $jobSearch, prompt: "Search target jobs").accessibilityIdentifier("wizard.job-description")
     }
 
     private var summaryPage: some View {
         Form {
-            Section("Ready to generate") { LabeledContent("Start", value: startMode.rawValue); LabeledContent("Name", value: startMode == .fresh ? draftName : "Existing resume baseline"); LabeledContent("Tasks", value: "\(selectedExperiences.count) selected"); LabeledContent("Job", value: selectedJob?.parsedTitle ?? "Selected job") }
+            Section("Ready to generate") {
+                LabeledContent("Profile", value: startMode == .fresh ? draftName : "Existing resume baseline")
+                LabeledContent("Experience", value: "\(selectedExperiences.count) selected")
+                LabeledContent("Target job", value: selectedJob?.parsedTitle ?? "Selected job")
+                HStack {
+                    Button("Edit profile") { step = .start }.accessibilityIdentifier("wizard.edit-profile")
+                    Spacer()
+                    Button("Edit experience") { step = .workLibrary }.accessibilityIdentifier("wizard.edit-experience")
+                    Spacer()
+                    Button("Edit job") { step = .jobDescription }.accessibilityIdentifier("wizard.edit-job")
+                }.font(.caption.weight(.semibold))
+            }
             Section("Selected tasks") { ForEach(selectedExperiences) { Text("\($0.jobTitle): \($0.tasks.first ?? "No task details")") } }
             if let selectedJob { Section("Job description") { Text(selectedJob.rawText).lineLimit(8) } }
-            if isLoading { Section { ProgressView("Generating your resume…").accessibilityIdentifier("wizard.loader") } }
-            if let errorMessage { Section { Text(errorMessage).foregroundStyle(.red) } }
+            if isLoading { Section { ProgressView("Building your tailored resume…").accessibilityIdentifier("wizard.loader") } }
+            if let errorMessage { Section { Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.red).accessibilityIdentifier("wizard.error") } }
         }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.summary")
     }
 
@@ -1575,14 +1602,15 @@ struct NewResumeView: View {
             VStack(alignment: .leading, spacing: 16) {
                 if generatedDraft != nil {
                     if isEditingGenerated {
-                        HStack {
-                            Button("Formatted") { generatedEditorMode = .formatted }
-                                .buttonStyle(.bordered)
-                                .accessibilityIdentifier("wizard.formatted-mode")
-                            Button("LaTeX") { generatedLaTeX = ResumeLaTeXFormatter.source(from: ResumeTextFormatter.format(generatedText)); generatedEditorMode = .latex }
-                                .buttonStyle(.bordered)
-                                .accessibilityIdentifier("wizard.latex-mode")
+                        Picker("Editor format", selection: $generatedEditorMode) {
+                            Text("Formatted").tag(EditorMode.formatted)
+                            Text("LaTeX").tag(EditorMode.latex)
                         }
+                        .pickerStyle(.segmented)
+                        .onChange(of: generatedEditorMode) { _, mode in
+                            if mode == .latex { generatedLaTeX = ResumeLaTeXFormatter.source(from: ResumeTextFormatter.format(generatedText)) }
+                        }
+                        .accessibilityIdentifier("wizard.editor-format")
                         if generatedEditorMode == .latex {
                             TextEditor(text: $generatedLaTeX)
                                 .font(.system(.body, design: .monospaced))
@@ -1601,17 +1629,17 @@ struct NewResumeView: View {
                     } else {
                         ResumePagePreview(pdfData: ResumeExportService().pdfData(for: ResumeTextFormatter.format(generatedText)))
                     }
-                    HStack {
-                        Button(isEditingGenerated ? "Done editing" : "Edit resume") { if isEditingGenerated && generatedEditorMode == .latex { generatedText = ResumeLaTeXFormatter.attributedText(from: generatedLaTeX).string }; isEditingGenerated.toggle() }
-                            .buttonStyle(.bordered)
-                            .accessibilityIdentifier("wizard.edit-resume")
-                        Button("Check job match") { showingAnalysis = true }
-                            .buttonStyle(.bordered)
-                            .accessibilityIdentifier("wizard.check-job-match")
-                        Button(isSaved ? "Saved to Resumes" : "Save Resume") { saveGeneratedResume() }
-                            .buttonStyle(CoralButtonStyle())
-                            .disabled(isSaved || generatedDraft == nil)
-                            .accessibilityIdentifier("wizard.save-resume")
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) {
+                            Button("Edit") { toggleGeneratedEditing() }.buttonStyle(.bordered).accessibilityLabel("Edit resume").accessibilityIdentifier("wizard.edit-resume")
+                            Button("Match") { showingAnalysis = true }.buttonStyle(.bordered).accessibilityLabel("Check job match").accessibilityIdentifier("wizard.check-job-match")
+                            compactSaveButton
+                        }
+                        VStack(alignment: .leading, spacing: 10) {
+                            Button("Edit resume") { toggleGeneratedEditing() }.buttonStyle(.bordered).accessibilityIdentifier("wizard.edit-resume")
+                            Button("Check job match") { showingAnalysis = true }.buttonStyle(.bordered).accessibilityIdentifier("wizard.check-job-match")
+                            saveButton
+                        }
                     }
                     if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
                 }
@@ -1626,29 +1654,72 @@ struct NewResumeView: View {
     }
 
     private var navigationBar: some View {
-        HStack { if step != .start { Button("Back") { moveBack() }.accessibilityIdentifier("wizard.back") }; Spacer(); if step == .summary { Button(isLoading ? "Generating…" : "Generate Resume") { Task { await generate() } }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.generate") } else if step != .generated { Button("Next") { advance() }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.next") } }.padding(.horizontal).padding(.vertical, 10).background(.bar)
+        HStack {
+            if step != .start { Button("Back") { moveBack() }.accessibilityIdentifier("wizard.back") }
+            Spacer()
+            if step == .summary { Button(isLoading ? "Generating…" : "Generate Resume") { Task { await generate() } }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.generate") }
+            else if step != .generated { Button("Continue") { advance() }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.next") }
+        }.padding(.horizontal).padding(.vertical, 10).background(.bar)
+    }
+
+    private var saveButton: some View {
+        Button(isSaved ? "Saved to Resumes" : "Save Resume") { saveGeneratedResume() }
+            .buttonStyle(CoralButtonStyle())
+            .disabled(isSaved || generatedDraft == nil)
+            .accessibilityIdentifier("wizard.save-resume")
+    }
+
+    private var compactSaveButton: some View {
+        saveButton
+            .buttonStyle(CoralButtonStyle(horizontalPadding: 12))
+            .accessibilityLabel(isSaved ? "Saved to Resumes" : "Save Resume")
     }
 
     private func loadProfileDraft() { draftName = profileName; draftEmail = profileEmail; draftPhone = profilePhone; draftLocation = profileLocation; draftLinkedIn = profileLinkedIn; draftGitHub = profileGitHub; draftEducation = profileEducation; draftSkills = profileSkills; draftCertifications = profileCertifications }
     private func toggleExperience(_ id: UUID) { if selectedExperienceIDs.contains(id) { selectedExperienceIDs.remove(id) } else { selectedExperienceIDs.insert(id) } }
     private func selectAllExperiences() { selectedExperienceIDs = Set(experiences.map(\.id)) }
     private func clearSelectedExperiences() { selectedExperienceIDs.removeAll() }
-    private func advance() { if step == .start, startMode == .fresh { profileName = draftName; profileEmail = draftEmail; profilePhone = draftPhone; profileLocation = draftLocation; profileLinkedIn = draftLinkedIn; profileGitHub = draftGitHub; profileEducation = draftEducation; profileSkills = draftSkills; profileCertifications = draftCertifications }; generatedDraft = nil; generatedText = ""; generatedLaTeX = ""; generatedEditorMode = .formatted; isEditingGenerated = false; isSaved = false; errorMessage = nil; step = ResumeWizardStep(rawValue: step.rawValue + 1)! }
-    private func moveBack() { step = ResumeWizardStep(rawValue: step.rawValue - 1)!; generatedDraft = nil; generatedText = ""; generatedLaTeX = ""; generatedEditorMode = .formatted; isEditingGenerated = false; isSaved = false; errorMessage = nil }
-    private func handleSwipe(_ translation: CGSize) {
-        let horizontal = abs(translation.width)
-        let vertical = abs(translation.height)
-        guard horizontal >= 40, horizontal > vertical * 1.25 else { return }
-        if translation.width < 0 {
-            if step != .start { moveBack() }
-        } else if step != .summary && step != .generated, canAdvance {
-            advance()
-        }
+    private func advance() {
+        focusedField = nil
+        if step == .start, startMode == .fresh { profileName = draftName; profileEmail = draftEmail; profilePhone = draftPhone; profileLocation = draftLocation; profileLinkedIn = draftLinkedIn; profileGitHub = draftGitHub; profileEducation = draftEducation; profileSkills = draftSkills; profileCertifications = draftCertifications }
+        generatedDraft = nil; generatedText = ""; generatedLaTeX = ""; generatedEditorMode = .formatted; isEditingGenerated = false; isSaved = false; errorMessage = nil
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { step = ResumeWizardStep(rawValue: step.rawValue + 1)! }
+    }
+    private func moveBack() {
+        focusedField = nil
+        generatedDraft = nil; generatedText = ""; generatedLaTeX = ""; generatedEditorMode = .formatted; isEditingGenerated = false; isSaved = false; errorMessage = nil
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { step = ResumeWizardStep(rawValue: step.rawValue - 1)! }
+    }
+    private func toggleGeneratedEditing() {
+        if isEditingGenerated && generatedEditorMode == .latex { generatedText = ResumeLaTeXFormatter.attributedText(from: generatedLaTeX).string }
+        isEditingGenerated.toggle()
     }
     private func importPDF(_ result: Result<URL, Error>) { do { let url = try result.get(); let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }; guard let text = PDFDocument(url: url)?.string?.trimmingCharacters(in: .whitespacesAndNewlines), text.count > 40 else { errorMessage = "This PDF has no readable text. Choose a text-based PDF."; return }; baselineText = text; selectedResumeID = nil } catch { errorMessage = "The PDF could not be opened. Choose another file." } }
     private func generate() async { isLoading = true; errorMessage = nil; generatedDraft = nil; if ProcessInfo.processInfo.arguments.contains("-resume-format-fixture") { generatedDraft = ResumeDraft(name: "Andrei Hidalgo — Full Stack AI Developer", summary: "AI developer focused on reliable, user-centered software.", experience: selectedExperiences.map { ($0.jobTitle, $0.tasks) }, skills: ["SwiftUI", "SwiftData", "Python"]); generatedText = JakesResumeTemplate().render(draft: generatedDraft!).string; isEditingGenerated = false; step = .generated; isLoading = false; return }; do { generatedDraft = try await ResumeGenerationService().generate(jobText: selectedJob?.rawText ?? "", work: selectedExperiences, profileName: draftName, profileText: profileText, baselineText: baselineText.isEmpty ? nil : baselineText); generatedText = generatedDraft?.rawText.isEmpty == false ? generatedDraft?.rawText ?? "" : generatedDraft.map { JakesResumeTemplate().render(draft: $0).string } ?? ""; isEditingGenerated = false; step = .generated } catch { errorMessage = error.localizedDescription }; isLoading = false }
     private var profileText: String { [draftName, draftEmail, draftPhone, draftLocation, draftLinkedIn, draftGitHub, draftEducation, draftSkills, draftCertifications].joined(separator: "\n") }
-    private func saveGeneratedResume() { guard let generatedDraft, let selectedJob else { return }; let document = ResumeDocumentConverter.document(from: generatedDraft); let data = try? document.data(); let resume = Resume(name: generatedDraft.name, jobTarget: selectedJob, workExperienceIDs: Array(selectedExperienceIDs), sections: [ResumeSection(kind: .summary, order: 0, title: "Resume", attributedText: ResumeTextFormatter.format(generatedText))], structuredDocumentData: data); modelContext.insert(resume); do { try modelContext.save(); isSaved = true; onSaved() } catch { errorMessage = error.localizedDescription } }
+    private func saveGeneratedResume() {
+        guard let generatedDraft, let selectedJob else { return }
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing") {
+            isSaved = true
+            self.generatedDraft = nil
+            return
+        }
+        let document = ResumeDocumentConverter.document(from: generatedDraft)
+        let data = try? document.data()
+        let resume = Resume(name: generatedDraft.name, jobTarget: selectedJob, workExperienceIDs: Array(selectedExperienceIDs), sections: [ResumeSection(kind: .summary, order: 0, title: "Resume", attributedText: ResumeTextFormatter.format(generatedText))], structuredDocumentData: data)
+        let restoreAutosave = modelContext.autosaveEnabled
+        modelContext.autosaveEnabled = false
+        modelContext.insert(resume)
+        do {
+            try modelContext.save()
+            modelContext.autosaveEnabled = restoreAutosave
+            isSaved = true
+            onSaved()
+        } catch {
+            modelContext.autosaveEnabled = restoreAutosave
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 struct ResumesView: View {
@@ -1771,6 +1842,8 @@ struct ResumeAnalysisSheet: View {
     @State private var suggestionTask: Task<Void, Never>?
     @State private var aiEvidence: [OnDeviceAnalysisSuggestionService.EvidenceSuggestion] = []
     @State private var message: String?
+    @State private var pendingSave = false
+    @State private var pendingChecklistData: Data?
 
     private var description: String { job?.rawText ?? "" }
     private var localSuggestions: [String] { ResumeAnalysisService.suggestedRequirements(from: description).filter { phrase in !requirements.contains { ResumeAnalysisService.normalized($0.phrase) == ResumeAnalysisService.normalized(phrase) } } }
@@ -1855,7 +1928,7 @@ struct ResumeAnalysisSheet: View {
             .navigationTitle("Resume report")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { suggestionTask?.cancel(); dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { finish() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Recheck") { recheck() }.accessibilityIdentifier("analysis.recheck") }
             }
             .onAppear { load() }
@@ -1871,6 +1944,7 @@ struct ResumeAnalysisSheet: View {
             } else if let report, report.reviewedCount > 0 {
                 Text("\(report.mentionedCount) of \(report.reviewedCount) reviewed requirements mentioned.")
                     .font(.headline)
+                    .accessibilityIdentifier("analysis.coverage-summary")
                 Text("This is phrase coverage only. It does not verify proficiency, years of experience, certification validity, or eligibility.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1975,21 +2049,44 @@ struct ResumeAnalysisSheet: View {
         guard let job else { return }
         let checklist = JobRequirementChecklist(description: job.rawText, requirements: requirements)
         do {
-            job.requirementChecklistData = try checklist.data()
-            try modelContext.save()
+            let data = try checklist.data()
+            pendingChecklistData = data
+            pendingSave = true
             isChecklistSaved = true
             jobChanged = false
             removedPhrases = []
             isEditingRequirements = false
             message = "Requirements saved for this job and will be reused across resumes."
-            recheck(using: requirements)
+            recheck(using: requirements, includeDocumentHealth: false)
         } catch { message = "Requirements could not be saved: \(error.localizedDescription)" }
     }
 
-    private func recheck(using checkedRequirements: [ResumeRequirement]? = nil) {
+    private func finish() {
+        suggestionTask?.cancel()
+        let shouldSave = pendingSave
+        let checklistData = pendingChecklistData
+        let job = job
+        pendingSave = false
+        pendingChecklistData = nil
+        dismiss()
+        guard shouldSave, let checklistData, let job else { return }
+        guard !ProcessInfo.processInfo.arguments.contains("-ui-testing") else { return }
+        Task { @MainActor in
+            await Task.yield()
+            let restoreAutosave = modelContext.autosaveEnabled
+            modelContext.autosaveEnabled = false
+            job.requirementChecklistData = checklistData
+            try? modelContext.save()
+            modelContext.autosaveEnabled = restoreAutosave
+        }
+    }
+
+    private func recheck(using checkedRequirements: [ResumeRequirement]? = nil, includeDocumentHealth: Bool = true) {
         let activeRequirements = checkedRequirements ?? (isChecklistSaved && !jobChanged ? requirements : [])
         let snapshot = ResumeAnalysisSnapshot(resumeName: resumeName, attributedResume: attributedText, jobDescription: job?.rawText, requirements: activeRequirements, workLibrary: workLibrary, pageTarget: pageTarget)
-        report = ResumeAnalysisService().analyze(snapshot)
+        let previousHealth = report?.healthFindings ?? []
+        let updated = ResumeAnalysisService().analyze(snapshot, includeDocumentHealth: includeDocumentHealth)
+        report = includeDocumentHealth || previousHealth.isEmpty ? updated : ResumeAnalysisReport(analyzedAt: updated.analyzedAt, requirementFindings: updated.requirementFindings, relatedWork: updated.relatedWork, healthFindings: previousHealth, pageTarget: updated.pageTarget)
     }
 
     private func suggestRequirements() {

@@ -14,11 +14,25 @@ if ! xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations >"$DESTI
   exit 70
 fi
 
-DESTINATION="${IOS_SIMULATOR_DESTINATION:-$(awk -v family="$DEVICE_FAMILY" '$0 ~ "platform:iOS Simulator" && $0 ~ "name:" family { match($0, /id:[^,}]*/); print "platform=iOS Simulator,id=" substr($0, RSTART + 3, RLENGTH - 3); exit }' "$DESTINATIONS_FILE")}"
+DESTINATION="${IOS_SIMULATOR_DESTINATION:-$(awk -v family="$DEVICE_FAMILY" '
+  $0 ~ "platform:iOS Simulator" && $0 ~ "name:" family {
+    match($0, /id:[^,}]*/)
+    id = "platform=iOS Simulator,id=" substr($0, RSTART + 3, RLENGTH - 3)
+    if (!fallback) fallback = id
+    if ((family == "iPad" && $0 ~ /name:iPad \(A16\)/) || (family == "iPhone" && $0 ~ /name:iPhone 17 \}/)) preferred = id
+  }
+  END { print preferred ? preferred : fallback }
+' "$DESTINATIONS_FILE")}"
 if [[ -z "$DESTINATION" ]]; then
   echo "No compatible $DEVICE_FAMILY Simulator destination found." >&2
   cat "$DESTINATIONS_FILE" >&2
   exit 1
+fi
+
+SIMULATOR_ID="${DESTINATION##*id=}"
+if [[ "$SIMULATOR_ID" != "$DESTINATION" ]]; then
+  xcrun simctl boot "$SIMULATOR_ID" 2>/dev/null || true
+  xcrun simctl bootstatus "$SIMULATOR_ID" -b
 fi
 
 COMMON_ARGS=(
@@ -34,11 +48,15 @@ COMMON_ARGS=(
 )
 
 echo "Building UI tests for $DESTINATION"
-xcodebuild "${COMMON_ARGS[@]}" build-for-testing
+xcodebuild "${COMMON_ARGS[@]}" build-for-testing 2>&1 | tee "$DIAGNOSTICS_DIR/build.log"
 
 echo "Running UI tests for $DESTINATION"
 rm -rf "$RESULT_BUNDLE"
 xcodebuild "${COMMON_ARGS[@]}" \
   -resultBundlePath "$RESULT_BUNDLE" \
   -enableCodeCoverage YES \
-  test-without-building
+  test-without-building 2>&1 | tee "$DIAGNOSTICS_DIR/test.log"
+
+if [[ -d "$RESULT_BUNDLE" ]]; then
+  xcrun xcresulttool get test-results summary --path "$RESULT_BUNDLE" > "$DIAGNOSTICS_DIR/test-summary.json" || true
+fi

@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import LocalAuthentication
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -18,7 +19,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .claude: ["claude-haiku-4-5-20251001|Claude Haiku 4.5", "claude-sonnet-5|Claude Sonnet 5", "claude-opus-5|Claude Opus 5"].map(Self.option)
         }
     }
-    private static func option(_ value: String) -> AIModelOption { let parts = value.split(separator: "|", maxSplits: 1).map(String.init); return AIModelOption(id: parts[0], name: parts[1]) }
+    nonisolated private static func option(_ value: String) -> AIModelOption { let parts = value.split(separator: "|", maxSplits: 1).map(String.init); return AIModelOption(id: parts[0], name: parts[1]) }
     var defaultModel: AIModelOption { models.count == 1 ? models[0] : models[1] }
     var requiresKey: Bool { self != .apple }
 }
@@ -29,7 +30,9 @@ struct APIKeyStore {
     private func testKey(_ provider: AIProvider) -> String { "ui-testing.ai-key.\(provider.rawValue)" }
     func key(for provider: AIProvider) -> String? {
         if isUITesting { return UserDefaults.standard.string(forKey: testKey(provider)) }
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: provider.rawValue, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne, kSecUseOperationPrompt as String: "Unlock your \(provider.name) API key"]
+        let context = LAContext()
+        context.localizedReason = "Unlock your \(provider.name) API key"
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: provider.rawValue, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne, kSecUseAuthenticationContext as String: context]
         var result: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)

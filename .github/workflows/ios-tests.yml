@@ -10,7 +10,7 @@ on:
 jobs:
   test:
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Show Xcode and Simulator runtimes
         run: |
@@ -45,10 +45,15 @@ jobs:
           xcodebuild -project CVee-resumebuilder.xcodeproj -scheme CVee-resumebuilder -showdestinations > ci-diagnostics/destinations.txt || true
           xcrun simctl list devices > ci-diagnostics/simulators.txt || true
           xcrun simctl list runtimes > ci-diagnostics/runtimes.txt || true
+          for result in TestResults-*.xcresult; do
+            if [ -d "$result" ]; then
+              xcrun xcresulttool get test-results summary --path "$result" > "ci-diagnostics/${result%.xcresult}-summary.json" || true
+            fi
+          done
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ios-test-results-${{ matrix.device-family }}
           path: |
