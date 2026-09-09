@@ -225,8 +225,12 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Python"].waitForExistence(timeout: timeout))
         requirement.typeText("\n")
         dismissKeyboard(in: app)
-        let saveRequirements = app.buttons["analysis.save-requirements"]
-        XCTAssertTrue(tapWhenHittable(saveRequirements, in: app))
+        let toolbarSave = app.buttons["analysis.save-requirements-toolbar"]
+        if toolbarSave.waitForExistence(timeout: 2) {
+            XCTAssertTrue(tapAction(toolbarSave, in: app))
+        } else {
+            XCTAssertTrue(tapWhenHittable(app.buttons["analysis.save-requirements"], in: app))
+        }
         let coverage = app.staticTexts["analysis.coverage-summary"]
         XCTAssertTrue(reveal(coverage, in: app))
         XCTAssertEqual(coverage.label, "1 of 1 reviewed requirements mentioned.")

@@ -1929,6 +1929,12 @@ struct ResumeAnalysisSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { finish() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isEditingRequirements || !isChecklistSaved {
+                        Button("Save") { saveRequirements() }
+                            .accessibilityIdentifier("analysis.save-requirements-toolbar")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) { Button("Recheck") { recheck() }.accessibilityIdentifier("analysis.recheck") }
             }
             .onAppear { load() }
