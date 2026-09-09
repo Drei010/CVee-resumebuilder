@@ -220,7 +220,9 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(requirement.waitForExistence(timeout: timeout))
         requirement.tap()
         requirement.typeText("Python")
-        app.buttons["analysis.add-phrase"].tap()
+        let addPhrase = app.buttons["analysis.add-phrase"]
+        XCTAssertTrue(tapWhenHittable(addPhrase, in: app))
+        XCTAssertTrue(app.staticTexts["Python"].waitForExistence(timeout: timeout))
         requirement.typeText("\n")
         dismissKeyboard(in: app)
         let saveRequirements = app.buttons["analysis.save-requirements"]
@@ -303,19 +305,19 @@ final class ResumeWizardUITests: XCTestCase {
     private func tapWhenHittable(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
         for _ in 0..<5 {
             if element.waitForExistence(timeout: 2) {
-                if element.isHittable {
+                if element.isHittable && element.isEnabled {
                     element.tap()
                     return true
                 }
                 dismissKeyboard(in: app)
-                if element.isHittable {
+                if element.isHittable && element.isEnabled {
                     element.tap()
                     return true
                 }
             }
             app.swipeUp()
         }
-        return element.waitForExistence(timeout: timeout) && element.isHittable
+        return element.waitForExistence(timeout: timeout) && element.isHittable && element.isEnabled
     }
 
     private func tapAction(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
