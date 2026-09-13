@@ -20,7 +20,7 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertFalse(task.exists)
         group.tap()
         XCTAssertTrue(task.waitForExistence(timeout: timeout))
-        let add = app.buttons["tasks.add"]
+        let add = app.buttons["tasks.actions"]
         XCTAssertTrue(add.isHittable)
         add.tap()
         app.buttons["Add manually"].tap()
@@ -58,6 +58,7 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(company.waitForExistence(timeout: timeout))
         company.tap()
         company.typeText("Example Studio")
+        XCTAssertTrue(app.buttons["Confirm recording"].isHittable)
         dismissKeyboard(in: app)
         let role = app.textFields["tasks.confirm-role"]
         XCTAssertTrue(role.waitForExistence(timeout: timeout))
@@ -76,6 +77,82 @@ final class ResumeWizardUITests: XCTestCase {
         let task = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Reduced manual search time'")).firstMatch
         XCTAssertTrue(task.waitForExistence(timeout: timeout))
         XCTAssertFalse(task.label.contains("Accenture Philippines"))
+    }
+
+    func testTaskSearchControlsReflectAndClearFilters() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-mock-data"]
+        app.launch()
+
+        let search = app.textFields["tasks.search"]
+        XCTAssertTrue(search.waitForExistence(timeout: timeout))
+        let resultCount = app.staticTexts["tasks.result-count"]
+        XCTAssertTrue(resultCount.waitForExistence(timeout: timeout))
+        XCTAssertTrue(resultCount.label.contains("30"))
+
+        search.tap()
+        search.typeText("Pinecone")
+        XCTAssertTrue(app.buttons["tasks.search.clear"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(resultCount.label.contains("5"))
+        app.buttons["tasks.search.clear"].tap()
+        XCTAssertFalse((search.value as? String ?? "").contains("Pinecone"))
+
+        app.buttons["tasks.filter"].tap()
+        app.buttons["[Mock] Pinecone Systems"].tap()
+        let chip = app.buttons["tasks.active-company-filter"]
+        XCTAssertTrue(chip.waitForExistence(timeout: timeout))
+        XCTAssertTrue(resultCount.label.contains("5"))
+        chip.tap()
+        XCTAssertFalse(chip.exists)
+
+        search.tap()
+        search.typeText("No matching task")
+        dismissKeyboard(in: app)
+        let clearFilters = app.buttons["tasks.clear-filters"]
+        XCTAssertTrue(clearFilters.waitForExistence(timeout: timeout))
+        clearFilters.tap()
+        XCTAssertTrue(resultCount.label.contains("30"))
+    }
+
+    func testCaptureAndConfirmationDetailsRemainEditable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+
+        let details = app.textFields["tasks.capture-details"]
+        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        details.tap()
+        details.typeText("Captured the first version of this achievement.")
+        dismissKeyboard(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.record"], in: app))
+
+        let confirmationDetails = app.textFields["tasks.record.details"]
+        XCTAssertTrue(confirmationDetails.waitForExistence(timeout: timeout))
+        confirmationDetails.tap()
+        confirmationDetails.typeText(" Added context.")
+        dismissKeyboard(in: app)
+        XCTAssertTrue((confirmationDetails.value as? String ?? "").contains("Added context"))
+        XCTAssertTrue(app.buttons["Confirm recording"].exists)
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue((details.value as? String ?? "").contains("Added context"))
+
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.record"], in: app))
+        XCTAssertTrue((app.textFields["tasks.record.details"].value as? String ?? "").contains("Added context"))
+        app.buttons["Cancel"].tap()
+    }
+
+    func testCaptureFieldAcceptsLongMultilineContent() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+
+        let details = app.textFields["tasks.capture-details"]
+        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        details.tap()
+        details.typeText("A long achievement description with enough words to wrap across multiple lines and exercise the growing capture field before its internal scrolling limit is reached.")
+        XCTAssertTrue((details.value as? String ?? "").contains("internal scrolling limit"))
+        XCTAssertTrue(app.buttons["tasks.record"].isEnabled)
+        capture(app, "tasks-capture-multiline")
     }
 
     func testTypedRoleSurvivesNewCompanySelection() {
@@ -111,17 +188,24 @@ final class ResumeWizardUITests: XCTestCase {
         details.typeText(original)
         dismissKeyboard(in: app)
         XCTAssertTrue(tapWhenHittable(app.buttons["tasks.record"], in: app))
+        let confirmationDetails = app.textFields["tasks.record.details"]
+        XCTAssertTrue(confirmationDetails.waitForExistence(timeout: timeout))
+        confirmationDetails.tap()
+        confirmationDetails.typeText(" Edited before review.")
+        dismissKeyboard(in: app)
         app.buttons["tasks.record.improve-ai"].tap()
 
-        XCTAssertTrue(app.staticTexts["task.ai-review.original"].waitForExistence(timeout: timeout))
+        let originalReview = app.staticTexts["task.ai-review.original"]
+        XCTAssertTrue(originalReview.waitForExistence(timeout: timeout))
+        XCTAssertTrue(originalReview.label.contains("Edited before review"))
         let useSuggestion = app.buttons["task.ai-review.use"]
         XCTAssertTrue(useSuggestion.waitForExistence(timeout: timeout))
         XCTAssertTrue(useSuggestion.isEnabled)
         useSuggestion.tap()
 
-        let preview = app.staticTexts["tasks.record.details-preview"]
+        let preview = app.textFields["tasks.record.details"]
         XCTAssertTrue(preview.waitForExistence(timeout: timeout))
-        XCTAssertTrue(preview.label.contains("Improved task details for testing"))
+        XCTAssertTrue((preview.value as? String ?? "").contains("Improved task details for testing"))
         app.buttons["Cancel"].tap()
     }
 
@@ -144,7 +228,7 @@ final class ResumeWizardUITests: XCTestCase {
         let keepOriginal = app.buttons["task.ai-review.keep"]
         XCTAssertTrue(revealBelow(keepOriginal, in: app))
         keepOriginal.tap()
-        XCTAssertTrue(app.staticTexts["tasks.record.details-preview"].label.contains(original))
+        XCTAssertTrue((app.textFields["tasks.record.details"].value as? String ?? "").contains(original))
         app.buttons["Cancel"].tap()
     }
 
@@ -171,7 +255,7 @@ final class ResumeWizardUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-ui-testing-ai"]
         app.launch()
-        app.buttons["tasks.add"].tap()
+        app.buttons["tasks.actions"].tap()
         let addManually = app.buttons["Add manually"]
         XCTAssertTrue(addManually.waitForExistence(timeout: timeout))
         addManually.tap()
@@ -225,9 +309,9 @@ final class ResumeWizardUITests: XCTestCase {
         app.launch()
         let restored = app.descendants(matching: .any)["tasks.capture-details"]
         XCTAssertTrue(restored.waitForExistence(timeout: timeout))
-        XCTAssertEqual(restored.value as? String, draft)
+        XCTAssertEqual((restored.value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), draft)
 
-        app.buttons["tasks.add"].tap()
+        app.buttons["tasks.actions"].tap()
         XCTAssertTrue(app.buttons["tasks.discard-draft"].waitForExistence(timeout: timeout))
         app.buttons["tasks.discard-draft"].tap()
         XCTAssertTrue(app.buttons["tasks.discard-draft-confirm"].waitForExistence(timeout: timeout))
@@ -239,7 +323,7 @@ final class ResumeWizardUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing"]
         app.launch()
-        app.buttons["tasks.add"].tap()
+        app.buttons["tasks.actions"].tap()
         app.buttons["Add manually"].tap()
         let title = app.textFields["task.role"]
         XCTAssertTrue(title.waitForExistence(timeout: timeout))
@@ -253,8 +337,8 @@ final class ResumeWizardUITests: XCTestCase {
         task.tap()
         XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: timeout))
         app.buttons["Done"].tap()
-        app.buttons["tasks.add"].tap()
-        app.buttons["Import Tasks List"].tap()
+        XCTAssertTrue(app.buttons["tasks.import"].waitForExistence(timeout: timeout))
+        app.buttons["tasks.import"].tap()
         XCTAssertTrue(app.buttons["import.choose-document"].waitForExistence(timeout: timeout))
         app.buttons["Cancel"].tap()
         selectTab("Profile", in: app)
@@ -273,8 +357,8 @@ final class ResumeWizardUITests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-resume-format-fixture", "-ui-testing-dark",
                                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
-        XCTAssertTrue(app.buttons["tasks.add"].waitForExistence(timeout: timeout))
-        XCTAssertTrue(app.buttons["tasks.add"].isHittable)
+        XCTAssertTrue(app.buttons["tasks.actions"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.buttons["tasks.actions"].isHittable)
         let companySection = app.buttons["tasks.company-section"].firstMatch
         for _ in 0..<3 where !companySection.isHittable { app.swipeUp() }
         XCTAssertTrue(companySection.isHittable)

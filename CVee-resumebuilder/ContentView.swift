@@ -617,6 +617,10 @@ struct WorkHistoryView: View {
         case company, role, details
     }
 
+    private enum RecordField: Hashable {
+        case details, role, company
+    }
+
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \WorkExperience.startDate, order: .reverse) private var experiences: [WorkExperience]
     @State private var selected: WorkExperience?
@@ -637,7 +641,9 @@ struct WorkHistoryView: View {
     @State private var showingTaskEnhancementReview = false
     @State private var showingDiscardDraftAlert = false
     @State private var hasEditedCapture = false
+    @State private var recordSheetDetent: PresentationDetent = .medium
     @FocusState private var focusedCaptureField: CaptureField?
+    @FocusState private var focusedRecordField: RecordField?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var companies: [String] {
@@ -669,6 +675,15 @@ struct WorkHistoryView: View {
         hasEditedCapture && TaskCaptureDraft(company: cardCompany, jobTitle: cardJobTitle, task: cardTask, isEnteringNewCompany: isEnteringNewCompany).hasContent
     }
 
+    private var hasTaskFilters: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedCompany != "All companies"
+    }
+
+    private var taskResultLabel: String {
+        let count = filteredExperiences.count
+        return "\(count) \(count == 1 ? "task" : "tasks")"
+    }
+
     private var cardTaskBinding: Binding<String> {
         Binding(get: { cardTask }, set: { cardTask = $0; hasEditedCapture = true; saveCardDraft() })
     }
@@ -682,24 +697,63 @@ struct WorkHistoryView: View {
     }
 
     private var taskSearchBar: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(CVeeColors.secondary)
-                .accessibilityHidden(true)
-            TextField("Search tasks", text: $searchText)
-                .textFieldStyle(.plain)
-                .accessibilityIdentifier("tasks.search")
-            Menu {
-                Button("All companies") { selectedCompany = "All companies" }
-                ForEach(companies, id: \.self) { company in
-                    Button(company) { selectedCompany = company }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(CVeeColors.secondary)
+                    .accessibilityHidden(true)
+                TextField("Search tasks", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .accessibilityIdentifier("tasks.search")
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(CVeeColors.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear task search")
+                    .accessibilityIdentifier("tasks.search.clear")
                 }
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .foregroundStyle(selectedCompany == "All companies" ? CVeeColors.secondary : CVeeColors.coral)
+                Menu {
+                    Button("All companies") { selectedCompany = "All companies" }
+                    ForEach(companies, id: \.self) { company in
+                        Button(company) { selectedCompany = company }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .foregroundStyle(selectedCompany == "All companies" ? CVeeColors.secondary : CVeeColors.coral)
+                }
+                .accessibilityLabel("Filter tasks by company")
+                .accessibilityValue(selectedCompany)
+                .accessibilityIdentifier("tasks.filter")
             }
-            .accessibilityLabel("Filter tasks by company")
-            .accessibilityValue(selectedCompany)
+
+            HStack(alignment: .center, spacing: 8) {
+                Text(taskResultLabel)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(CVeeColors.secondary)
+                    .accessibilityIdentifier("tasks.result-count")
+                if selectedCompany != "All companies" {
+                    Button {
+                        selectedCompany = "All companies"
+                    } label: {
+                        Label(selectedCompany, systemImage: "xmark")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(CVeeColors.objectInk)
+                            .lineLimit(2)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(CVeeColors.objectTint.opacity(0.16), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove company filter")
+                    .accessibilityValue(selectedCompany)
+                    .accessibilityIdentifier("tasks.active-company-filter")
+                }
+                Spacer(minLength: 0)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
@@ -716,9 +770,42 @@ struct WorkHistoryView: View {
                 .listRowBackground(CVeeColors.page)
                 .listRowSeparator(.hidden)
 
+            Button {
+                showingImport = true
+            } label: {
+                HStack {
+                    Label("Import tasks", systemImage: "arrow.down.document")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(CVeeColors.ink)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(CVeeColors.card, in: RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("tasks.import")
+            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 12, trailing: 16))
+            .listRowBackground(CVeeColors.page)
+            .listRowSeparator(.hidden)
+
             Section {
                 if filteredExperiences.isEmpty {
-                    ContentUnavailableView(searchText.isEmpty && selectedCompany == "All companies" ? "No work history" : "No matching tasks", systemImage: "magnifyingglass", description: Text(searchText.isEmpty && selectedCompany == "All companies" ? "Add roles once and reuse them for every tailored resume." : "Try a different search or filter."))
+                    ContentUnavailableView {
+                        Label(searchText.isEmpty && selectedCompany == "All companies" ? "No work history" : "No matching tasks", systemImage: "magnifyingglass")
+                    } description: {
+                        Text(searchText.isEmpty && selectedCompany == "All companies" ? "Add roles once and reuse them for every tailored resume." : "Try a different search or filter.")
+                    } actions: {
+                        if hasTaskFilters {
+                            Button("Clear search and filters") {
+                                clearTaskFilters()
+                            }
+                            .accessibilityIdentifier("tasks.clear-filters")
+                        }
+                    }
                 }
                 ForEach(Array(Set(filteredExperiences.map(\.company))).sorted(), id: \.self) { company in
                     Section {
@@ -781,7 +868,7 @@ struct WorkHistoryView: View {
         .listStyle(.plain)
         .frame(maxWidth: 760)
         .frame(maxWidth: .infinity)
-        .safeAreaPadding(.bottom, 80)
+        .safeAreaPadding(.bottom, 16)
         .navigationTitle("Tasks")
         .scrollContentBackground(.hidden)
         .background(CVeeColors.page)
@@ -800,25 +887,21 @@ struct WorkHistoryView: View {
         }
         .task { restoreCardOrSeed() }
         .onChange(of: experiences.count) { _, _ in restoreCardOrSeed() }
-        .overlay(alignment: .bottomTrailing) {
-            Menu {
-                Button("Add manually") { showingAddTask = true }
-                Button("Import Tasks List") { showingImport = true }
-                if hasCaptureDraft {
-                    Button("Discard draft", role: .destructive) { showingDiscardDraftAlert = true }
-                        .accessibilityIdentifier("tasks.discard-draft")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Add manually") { showingAddTask = true }
+                    if hasCaptureDraft {
+                        Button("Discard draft", role: .destructive) { showingDiscardDraftAlert = true }
+                            .accessibilityIdentifier("tasks.discard-draft")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
-            } label: {
-                Image(systemName: "plus").font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(CVeeColors.buttonInk)
-                    .frame(width: 56, height: 56)
-                    .background(CVeeColors.coral, in: Circle())
-                    .shadow(color: CVeeColors.coral.opacity(0.45), radius: 10, x: 0, y: 8)
+                .accessibilityLabel("Task actions")
+                .accessibilityHint("Choose an additional task action")
+                .accessibilityIdentifier("tasks.actions")
             }
-            .accessibilityLabel("Add task")
-            .accessibilityHint("Choose whether to add a task manually or import a task list")
-            .accessibilityIdentifier("tasks.add")
-            .padding(.trailing, 18).padding(.bottom, 16)
         }
         .sheet(isPresented: $showingRecordConfirmation) { recordTaskConfirmation }
         .alert("Discard unfinished draft?", isPresented: $showingDiscardDraftAlert) {
@@ -860,28 +943,25 @@ struct WorkHistoryView: View {
                     .font(.caption)
                     .foregroundStyle(CVeeColors.buttonInk.opacity(0.75))
 
-                ZStack(alignment: .topLeading) {
-                    if cardTask.isEmpty {
-                        Text("Describe the task or achievement…")
-                            .font(.subheadline)
-                            .foregroundStyle(CVeeColors.secondary)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 12)
-                            .allowsHitTesting(false)
-                    }
-                    TextEditor(text: cardTaskBinding)
-                        .font(.subheadline)
-                        .foregroundStyle(CVeeColors.ink)
-                        .scrollContentBackground(.hidden)
-                        .padding(8)
-                        .focused($focusedCaptureField, equals: .details)
-                        .accessibilityLabel("Task details")
-                        .accessibilityIdentifier("tasks.capture-details")
-                }
-                .frame(height: 66)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+                TextField("Describe the task or achievement…", text: cardTaskBinding, axis: .vertical)
+                    .font(.subheadline)
+                    .foregroundStyle(CVeeColors.ink)
+                    .textFieldStyle(.plain)
+                    .lineLimit(3...6)
+                    .padding(12)
+                    .focused($focusedCaptureField, equals: .details)
+                    .submitLabel(.done)
+                    .onSubmit { focusedCaptureField = nil }
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+                    .accessibilityLabel("Task details")
+                    .accessibilityIdentifier("tasks.capture-details")
 
-                Button("Record task") { showingRecordConfirmation = true }
+                Button("Record task") {
+                    focusedCaptureField = nil
+                    recordSheetDetent = .medium
+                    focusedRecordField = nil
+                    showingRecordConfirmation = true
+                }
                     .buttonStyle(CoralButtonStyle(horizontalPadding: 18, verticalPadding: 8, minimumHeight: 40))
                     .disabled(!canRecordTask)
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -899,15 +979,20 @@ struct WorkHistoryView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text(cardTask)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                        .accessibilityIdentifier("tasks.record.details-preview")
+                    TextField("Describe the task or achievement…", text: cardTaskBinding, axis: .vertical)
+                        .font(.body)
+                        .lineLimit(3...6)
+                        .focused($focusedRecordField, equals: .details)
+                        .submitLabel(.done)
+                        .onSubmit { focusedRecordField = nil }
+                        .accessibilityLabel("Task details")
+                        .accessibilityIdentifier("tasks.record.details")
                 } header: {
                     HStack {
                         Text("Task details")
                         Spacer()
                         Button {
+                            focusedRecordField = nil
                             showingTaskEnhancementReview = true
                         } label: {
                             Label("Improve with AI", systemImage: "sparkles")
@@ -920,6 +1005,9 @@ struct WorkHistoryView: View {
                 }
                 Section("Role") {
                     TextField("Role name", text: cardRoleBinding)
+                        .focused($focusedRecordField, equals: .role)
+                        .submitLabel(.done)
+                        .onSubmit { focusedRecordField = nil }
                         .accessibilityIdentifier("tasks.confirm-role")
                     Menu {
                         ForEach(companies, id: \.self) { company in
@@ -930,6 +1018,7 @@ struct WorkHistoryView: View {
                             cardCompany = ""
                             hasEditedCapture = true
                             saveCardDraft()
+                            recordSheetDetent = .large
                         }
                     } label: {
                         Label(cardCompany.isEmpty ? "Choose company" : cardCompany, systemImage: "building.2")
@@ -939,16 +1028,11 @@ struct WorkHistoryView: View {
                     .accessibilityIdentifier("tasks.confirm-company")
                     if isEnteringNewCompany {
                         TextField("Company name", text: cardCompanyBinding)
+                            .focused($focusedRecordField, equals: .company)
+                            .submitLabel(.done)
+                            .onSubmit { focusedRecordField = nil }
                             .accessibilityIdentifier("tasks.confirm-company-name")
                     }
-                }
-                Section {
-                    Button("Confirm recording") {
-                        recordTask()
-                    }
-                    .buttonStyle(CoralButtonStyle())
-                    .frame(maxWidth: .infinity)
-                    .disabled(!canConfirmRecording || showingTaskEnhancementReview)
                 }
             }
             .modifier(WorkspaceSurface())
@@ -956,11 +1040,36 @@ struct WorkHistoryView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showingRecordConfirmation = false }
+                    Button("Cancel") {
+                        focusedRecordField = nil
+                        showingRecordConfirmation = false
+                    }
                 }
             }
         }
-        .presentationDetents([.medium])
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Divider()
+                Button("Confirm recording") {
+                    focusedRecordField = nil
+                    recordTask()
+                }
+                .buttonStyle(CoralButtonStyle())
+                .frame(maxWidth: .infinity)
+                .disabled(!canConfirmRecording || showingTaskEnhancementReview)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            .background(.bar)
+        }
+        .presentationDetents([.medium, .large], selection: $recordSheetDetent)
+        .presentationDragIndicator(.visible)
+        .onChange(of: focusedRecordField) { _, field in
+            if field != nil { recordSheetDetent = .large }
+        }
+        .onChange(of: isEnteringNewCompany) { _, isEntering in
+            if isEntering { focusedRecordField = .company }
+        }
         .alert("Couldn’t record task", isPresented: Binding(get: { recordError != nil }, set: { if !$0 { recordError = nil } })) {
             Button("OK", role: .cancel) { recordError = nil }
         } message: {
@@ -974,6 +1083,11 @@ struct WorkHistoryView: View {
                 saveCardDraft()
             }
         }
+    }
+
+    private func clearTaskFilters() {
+        searchText = ""
+        selectedCompany = "All companies"
     }
 
     private func restoreCardOrSeed() {
