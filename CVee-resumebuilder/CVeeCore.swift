@@ -376,6 +376,12 @@ private enum ResumePrompt {
 
 struct TaskEnhancementService {
     func enhance(_ task: String) async throws -> String {
+        if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("-ui-testing-ai") }) {
+            if ProcessInfo.processInfo.arguments.contains("-ui-testing-ai-failure") { throw AIProviderError.provider }
+            if ProcessInfo.processInfo.arguments.contains("-ui-testing-ai-empty") { return "" }
+            return "Improved task details for testing. Preserved the original facts."
+        }
+
         let instructions = """
             Rewrite one resume achievement in Google XYZ style, using only facts stated in the input. \
             Preserve every number in the input exactly — never invent, drop, round, or alter any metric, tool, scope, or outcome. \

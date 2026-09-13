@@ -197,7 +197,9 @@ struct ProfileView: View {
         try? modelContext.save()
         JobCaptureStore().removeAll()
         JobCaptureDraftStore.clear()
+        TaskCaptureDraftStore.clear()
         name = "Andrei Hidalgo"; email = ""; phone = ""; location = ""; linkedin = ""; github = ""; education = ""; skills = ""; certifications = ""
+        UserDefaults.standard.removeObject(forKey: "tasks.lastCompany")
         AIProviderSelection().clear()
     }
 }
@@ -522,7 +524,99 @@ struct ClearAllDataView: View {
     }
 }
 
+private struct TaskEnhancementReviewView: View {
+    @Environment(\.dismiss) private var dismiss
+    let original: String
+    let onUse: (String, String) -> Void
+    @State private var suggestion = ""
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+    @State private var requestID = UUID()
+
+    init(original: String, onUse: @escaping (String, String) -> Void) {
+        self.original = original
+        self.onUse = onUse
+    }
+
+    private var canUseSuggestion: Bool {
+        !isLoading && !suggestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Original") {
+                    Text(original)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("task.ai-review.original")
+                }
+                Section("Suggested") {
+                    TextEditor(text: $suggestion)
+                        .frame(minHeight: 150)
+                        .accessibilityLabel("Suggested task details")
+                        .accessibilityIdentifier("task.ai-review.suggested")
+                    if isLoading { ProgressView("Preparing suggestion…") }
+                    if let errorMessage {
+                        Text(errorMessage).font(.caption).foregroundStyle(.red)
+                            .accessibilityIdentifier("task.ai-review.error")
+                    }
+                }
+                Section {
+                    Button("Use suggestion") {
+                        let value = suggestion.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard canUseSuggestion else { return }
+                        onUse(original, value)
+                        dismiss()
+                    }
+                    .buttonStyle(CoralButtonStyle())
+                    .frame(maxWidth: .infinity)
+                    .disabled(!canUseSuggestion)
+                    .accessibilityIdentifier("task.ai-review.use")
+                    Button("Keep original") { dismiss() }
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("task.ai-review.keep")
+                }
+            }
+            .modifier(WorkspaceSurface())
+            .navigationTitle("Review AI suggestion")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .task(id: requestID) {
+            let currentRequestID = requestID
+            do {
+                let generated = try await TaskEnhancementService().enhance(original)
+                guard !Task.isCancelled, requestID == currentRequestID else { return }
+                let value = generated.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty else {
+                    errorMessage = "The AI provider returned an empty suggestion."
+                    isLoading = false
+                    return
+                }
+                suggestion = value
+                isLoading = false
+            } catch is CancellationError {
+            } catch {
+                guard !Task.isCancelled, requestID == currentRequestID else { return }
+                errorMessage = error.localizedDescription
+                isLoading = false
+            }
+        }
+        .onDisappear { requestID = UUID() }
+    }
+}
+
 struct WorkHistoryView: View {
+    private enum CaptureField: Hashable {
+        case company, role, details
+    }
+
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \WorkExperience.startDate, order: .reverse) private var experiences: [WorkExperience]
     @State private var selected: WorkExperience?
@@ -531,6 +625,19 @@ struct WorkHistoryView: View {
     @State private var searchText = ""
     @State private var selectedCompany = "All companies"
     @State private var collapsedCompanies = Set<String>()
+    @AppStorage("tasks.lastCompany") private var rememberedCompany = ""
+    @State private var cardCompany = ""
+    @State private var cardJobTitle = ""
+    @State private var cardTask = ""
+    @State private var isEnteringNewCompany = false
+    @State private var didSeedCard = false
+    @State private var cardIsCollapsed = false
+    @State private var showingRecordConfirmation = false
+    @State private var recordError: String?
+    @State private var showingTaskEnhancementReview = false
+    @State private var showingDiscardDraftAlert = false
+    @State private var hasEditedCapture = false
+    @FocusState private var focusedCaptureField: CaptureField?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var companies: [String] {
@@ -548,63 +655,127 @@ struct WorkHistoryView: View {
         }
     }
 
+    private var canRecordTask: Bool {
+        !cardTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var canConfirmRecording: Bool {
+        !cardCompany.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !cardJobTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        canRecordTask
+    }
+
+    private var hasCaptureDraft: Bool {
+        hasEditedCapture && TaskCaptureDraft(company: cardCompany, jobTitle: cardJobTitle, task: cardTask, isEnteringNewCompany: isEnteringNewCompany).hasContent
+    }
+
+    private var cardTaskBinding: Binding<String> {
+        Binding(get: { cardTask }, set: { cardTask = $0; hasEditedCapture = true; saveCardDraft() })
+    }
+
+    private var cardRoleBinding: Binding<String> {
+        Binding(get: { cardJobTitle }, set: { cardJobTitle = $0; hasEditedCapture = true; saveCardDraft() })
+    }
+
+    private var cardCompanyBinding: Binding<String> {
+        Binding(get: { cardCompany }, set: { cardCompany = $0; hasEditedCapture = true; saveCardDraft() })
+    }
+
+    private var taskSearchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(CVeeColors.secondary)
+                .accessibilityHidden(true)
+            TextField("Search tasks", text: $searchText)
+                .textFieldStyle(.plain)
+                .accessibilityIdentifier("tasks.search")
+            Menu {
+                Button("All companies") { selectedCompany = "All companies" }
+                ForEach(companies, id: \.self) { company in
+                    Button(company) { selectedCompany = company }
+                }
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .foregroundStyle(selectedCompany == "All companies" ? CVeeColors.secondary : CVeeColors.coral)
+            }
+            .accessibilityLabel("Filter tasks by company")
+            .accessibilityValue(selectedCompany)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .background(CVeeColors.card, in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+        .background(CVeeColors.page)
+    }
+
     var body: some View {
         List {
-            if filteredExperiences.isEmpty {
-                ContentUnavailableView(searchText.isEmpty && selectedCompany == "All companies" ? "No work history" : "No matching tasks", systemImage: "magnifyingglass", description: Text(searchText.isEmpty && selectedCompany == "All companies" ? "Add roles once and reuse them for every tailored resume." : "Try a different search or filter."))
-            }
-            ForEach(Array(Set(filteredExperiences.map(\.company))).sorted(), id: \.self) { company in
-                Section {
-                    if !collapsedCompanies.contains(company) {
-                        ForEach(filteredExperiences.filter { $0.company == company }) { experience in
-                            Button { selected = experience } label: {
-                                HStack(alignment: .top, spacing: 12) {
-                                    Image(systemName: "text.badge.checkmark")
-                                        .font(.system(size: 20))
-                                        .foregroundStyle(CVeeColors.secondary)
-                                        .frame(width: 22).accessibilityHidden(true)
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Text(experience.jobTitle).font(.subheadline.weight(.medium))
-                                        Text(experience.tasks.first ?? "No task details yet")
-                                            .font(.subheadline).foregroundStyle(CVeeColors.secondary).lineLimit(2)
-                                        MetadataPill(text: experience.company.isEmpty ? "Work history" : experience.company)
-                                        Text(experience.dateRange).font(.caption).monospacedDigit()
-                                            .foregroundStyle(CVeeColors.secondary)
-                                    }
-                                    Spacer(minLength: 0)
-                                }
-                                .padding(.vertical, 11)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .listRowBackground(CVeeColors.page)
-                            .listRowSeparatorTint(CVeeColors.divider)
-                            .accessibilityHint("Opens this work experience for editing")
-                            .swipeActions { Button("Delete", role: .destructive) { modelContext.delete(experience) } }
-                        }
-                    }
-                } header: {
-                    Button {
-                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
-                            if collapsedCompanies.contains(company) { collapsedCompanies.remove(company) }
-                            else { collapsedCompanies.insert(company) }
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: collapsedCompanies.contains(company) ? "chevron.right" : "chevron.down")
-                            Text(company.isEmpty ? "Work history" : company)
-                            Spacer()
-                            Text("\(filteredExperiences.filter { $0.company == company }.count)").monospacedDigit()
-                                .foregroundStyle(CVeeColors.secondary)
-                        }
-                        .font(.caption.weight(.bold)).foregroundStyle(CVeeColors.ink)
-                        .frame(minHeight: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain).textCase(nil)
-                    .accessibilityValue(collapsedCompanies.contains(company) ? "Collapsed" : "Expanded")
-                    .accessibilityIdentifier("tasks.company-section")
+            taskCaptureCard
+                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                .listRowBackground(CVeeColors.page)
+                .listRowSeparator(.hidden)
+
+            Section {
+                if filteredExperiences.isEmpty {
+                    ContentUnavailableView(searchText.isEmpty && selectedCompany == "All companies" ? "No work history" : "No matching tasks", systemImage: "magnifyingglass", description: Text(searchText.isEmpty && selectedCompany == "All companies" ? "Add roles once and reuse them for every tailored resume." : "Try a different search or filter."))
                 }
+                ForEach(Array(Set(filteredExperiences.map(\.company))).sorted(), id: \.self) { company in
+                    Section {
+                        if !collapsedCompanies.contains(company) {
+                            ForEach(filteredExperiences.filter { $0.company == company }) { experience in
+                                Button { selected = experience } label: {
+                                    HStack(alignment: .top, spacing: 12) {
+                                        Image(systemName: "text.badge.checkmark")
+                                            .font(.system(size: 20))
+                                            .foregroundStyle(CVeeColors.secondary)
+                                            .frame(width: 22).accessibilityHidden(true)
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text(experience.tasks.first ?? "No task details yet")
+                                                .font(.subheadline.weight(.medium)).foregroundStyle(CVeeColors.ink).lineLimit(3)
+                                            Text(experience.jobTitle)
+                                                .font(.caption.weight(.medium)).foregroundStyle(CVeeColors.secondary)
+                                            Text(experience.dateRange).font(.caption).monospacedDigit()
+                                                .foregroundStyle(CVeeColors.secondary)
+                                        }
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(.vertical, 11)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .listRowBackground(CVeeColors.page)
+                                .listRowSeparatorTint(CVeeColors.divider)
+                                .accessibilityLabel("\(experience.tasks.first ?? "No task details yet"). \(experience.jobTitle). \(experience.dateRange)")
+                                .accessibilityHint("Opens this work experience for editing")
+                                .swipeActions { Button("Delete", role: .destructive) { modelContext.delete(experience) } }
+                            }
+                        }
+                    } header: {
+                        Button {
+                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                                if collapsedCompanies.contains(company) { collapsedCompanies.remove(company) }
+                                else { collapsedCompanies.insert(company) }
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: collapsedCompanies.contains(company) ? "chevron.right" : "chevron.down")
+                                Text(company.isEmpty ? "Work history" : company)
+                                Spacer()
+                                Text("\(filteredExperiences.filter { $0.company == company }.count)").monospacedDigit()
+                                    .foregroundStyle(CVeeColors.secondary)
+                            }
+                            .font(.caption.weight(.bold)).foregroundStyle(CVeeColors.ink)
+                            .frame(minHeight: 44).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).textCase(nil)
+                        .accessibilityValue(collapsedCompanies.contains(company) ? "Collapsed" : "Expanded")
+                        .accessibilityIdentifier("tasks.company-section")
+                    }
+                }
+            } header: {
+                taskSearchBar
             }
         }
         .listStyle(.plain)
@@ -612,13 +783,31 @@ struct WorkHistoryView: View {
         .frame(maxWidth: .infinity)
         .safeAreaPadding(.bottom, 80)
         .navigationTitle("Tasks")
-        .searchable(text: $searchText, prompt: "Search tasks")
         .scrollContentBackground(.hidden)
         .background(CVeeColors.page)
+        .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { _, offset in
+            guard focusedCaptureField == nil else { return }
+            let shouldCollapse = offset > 32
+            guard shouldCollapse != cardIsCollapsed else { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                cardIsCollapsed = shouldCollapse
+            }
+        }
+        .onChange(of: focusedCaptureField) { _, field in
+            if field != nil && cardIsCollapsed {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { cardIsCollapsed = false }
+            }
+        }
+        .task { restoreCardOrSeed() }
+        .onChange(of: experiences.count) { _, _ in restoreCardOrSeed() }
         .overlay(alignment: .bottomTrailing) {
             Menu {
                 Button("Add manually") { showingAddTask = true }
                 Button("Import Tasks List") { showingImport = true }
+                if hasCaptureDraft {
+                    Button("Discard draft", role: .destructive) { showingDiscardDraftAlert = true }
+                        .accessibilityIdentifier("tasks.discard-draft")
+                }
             } label: {
                 Image(systemName: "plus").font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(CVeeColors.buttonInk)
@@ -631,20 +820,241 @@ struct WorkHistoryView: View {
             .accessibilityIdentifier("tasks.add")
             .padding(.trailing, 18).padding(.bottom, 16)
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    Button("All companies") { selectedCompany = "All companies" }
-                    ForEach(companies, id: \.self) { company in
-                        Button(company) { selectedCompany = company }
-                    }
-                } label: { Label(selectedCompany == "All companies" ? "Filter" : selectedCompany, systemImage: "line.3.horizontal.decrease.circle") }
-                .accessibilityLabel("Filter tasks by company")
-            }
+        .sheet(isPresented: $showingRecordConfirmation) { recordTaskConfirmation }
+        .alert("Discard unfinished draft?", isPresented: $showingDiscardDraftAlert) {
+            Button("Discard", role: .destructive) { discardCaptureDraft() }
+                .accessibilityIdentifier("tasks.discard-draft-confirm")
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("The task details you entered will be removed.")
         }
         .sheet(item: $selected) { experience in TaskDetailView(experience: experience) }
         .sheet(isPresented: $showingAddTask) { WorkExperienceEditor(experience: WorkExperience(jobTitle: "", company: "")) }
         .sheet(isPresented: $showingImport) { TaskImportView() }
+    }
+
+    private var taskCaptureCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if cardIsCollapsed {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { cardIsCollapsed = false }
+                } label: {
+                    HStack {
+                        Text("What is your task today")
+                            .font(.headline.weight(.bold))
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                    }
+                    .foregroundStyle(CVeeColors.buttonInk)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("tasks.capture-card")
+                .accessibilityHint("Expands the task recorder")
+            } else {
+                Text("What is your task today")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(CVeeColors.buttonInk)
+                Text("Capture a task while it is fresh.")
+                    .font(.caption)
+                    .foregroundStyle(CVeeColors.buttonInk.opacity(0.75))
+
+                ZStack(alignment: .topLeading) {
+                    if cardTask.isEmpty {
+                        Text("Describe the task or achievement…")
+                            .font(.subheadline)
+                            .foregroundStyle(CVeeColors.secondary)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 12)
+                            .allowsHitTesting(false)
+                    }
+                    TextEditor(text: cardTaskBinding)
+                        .font(.subheadline)
+                        .foregroundStyle(CVeeColors.ink)
+                        .scrollContentBackground(.hidden)
+                        .padding(8)
+                        .focused($focusedCaptureField, equals: .details)
+                        .accessibilityLabel("Task details")
+                        .accessibilityIdentifier("tasks.capture-details")
+                }
+                .frame(height: 66)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+
+                Button("Record task") { showingRecordConfirmation = true }
+                    .buttonStyle(CoralButtonStyle(horizontalPadding: 18, verticalPadding: 8, minimumHeight: 40))
+                    .disabled(!canRecordTask)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .accessibilityIdentifier("tasks.record")
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: cardIsCollapsed ? 64 : nil, alignment: .top)
+        .background(CVeeColors.coral, in: RoundedRectangle(cornerRadius: 16))
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: cardIsCollapsed)
+    }
+
+    private var recordTaskConfirmation: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(cardTask)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("tasks.record.details-preview")
+                } header: {
+                    HStack {
+                        Text("Task details")
+                        Spacer()
+                        Button {
+                            showingTaskEnhancementReview = true
+                        } label: {
+                            Label("Improve with AI", systemImage: "sparkles")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .disabled(cardTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityLabel("Improve task details with AI")
+                        .accessibilityIdentifier("tasks.record.improve-ai")
+                    }
+                }
+                Section("Role") {
+                    TextField("Role name", text: cardRoleBinding)
+                        .accessibilityIdentifier("tasks.confirm-role")
+                    Menu {
+                        ForEach(companies, id: \.self) { company in
+                            Button(company) { selectCardCompany(company, markAsUserInput: true) }
+                        }
+                        Button("New company") {
+                            isEnteringNewCompany = true
+                            cardCompany = ""
+                            hasEditedCapture = true
+                            saveCardDraft()
+                        }
+                    } label: {
+                        Label(cardCompany.isEmpty ? "Choose company" : cardCompany, systemImage: "building.2")
+                    }
+                    .accessibilityLabel("Task company")
+                    .accessibilityValue(cardCompany.isEmpty ? "Choose company" : cardCompany)
+                    .accessibilityIdentifier("tasks.confirm-company")
+                    if isEnteringNewCompany {
+                        TextField("Company name", text: cardCompanyBinding)
+                            .accessibilityIdentifier("tasks.confirm-company-name")
+                    }
+                }
+                Section {
+                    Button("Confirm recording") {
+                        recordTask()
+                    }
+                    .buttonStyle(CoralButtonStyle())
+                    .frame(maxWidth: .infinity)
+                    .disabled(!canConfirmRecording || showingTaskEnhancementReview)
+                }
+            }
+            .modifier(WorkspaceSurface())
+            .navigationTitle("Record task")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingRecordConfirmation = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .alert("Couldn’t record task", isPresented: Binding(get: { recordError != nil }, set: { if !$0 { recordError = nil } })) {
+            Button("OK", role: .cancel) { recordError = nil }
+        } message: {
+            Text(recordError ?? "Try again.")
+        }
+        .sheet(isPresented: $showingTaskEnhancementReview) {
+            TaskEnhancementReviewView(original: cardTask) { original, suggestion in
+                guard cardTask == original else { return }
+                cardTask = suggestion
+                hasEditedCapture = true
+                saveCardDraft()
+            }
+        }
+    }
+
+    private func restoreCardOrSeed() {
+        guard !didSeedCard else { return }
+        if let draft = TaskCaptureDraftStore.load(), draft.hasContent {
+            cardCompany = draft.company
+            cardJobTitle = draft.jobTitle
+            cardTask = draft.task
+            isEnteringNewCompany = draft.isEnteringNewCompany
+            hasEditedCapture = true
+            didSeedCard = true
+            return
+        }
+        seedCardIfNeeded()
+    }
+
+    private func seedCardIfNeeded() {
+        guard !didSeedCard else { return }
+        let preferredCompany = companies.contains(rememberedCompany) ? rememberedCompany : experiences.first?.company ?? ""
+        guard !preferredCompany.isEmpty else {
+            didSeedCard = true
+            return
+        }
+        selectCardCompany(preferredCompany, markAsUserInput: false)
+        didSeedCard = true
+    }
+
+    private func selectCardCompany(_ company: String, markAsUserInput: Bool) {
+        isEnteringNewCompany = false
+        cardCompany = company
+        if cardJobTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            cardJobTitle = experiences.first(where: { $0.company == company })?.jobTitle ?? ""
+        }
+        rememberedCompany = company
+        if markAsUserInput {
+            hasEditedCapture = true
+            saveCardDraft()
+        }
+    }
+
+    private func saveCardDraft() {
+        guard hasEditedCapture else { return }
+        let draft = TaskCaptureDraft(company: cardCompany, jobTitle: cardJobTitle, task: cardTask, isEnteringNewCompany: isEnteringNewCompany)
+        if draft.hasContent { TaskCaptureDraftStore.save(draft) }
+        else { TaskCaptureDraftStore.clear() }
+    }
+
+    private func discardCaptureDraft() {
+        TaskCaptureDraftStore.clear()
+        cardCompany = ""
+        cardJobTitle = ""
+        cardTask = ""
+        isEnteringNewCompany = false
+        hasEditedCapture = false
+        didSeedCard = false
+        restoreCardOrSeed()
+    }
+
+    private func recordTask() {
+        let company = cardCompany.trimmingCharacters(in: .whitespacesAndNewlines)
+        let jobTitle = cardJobTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let task = cardTask.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !company.isEmpty, !jobTitle.isEmpty, !task.isEmpty else { return }
+
+        let experience = WorkExperience(jobTitle: jobTitle, company: company, startDate: .now, tasks: [task])
+        modelContext.insert(experience)
+        do {
+            try modelContext.save()
+            rememberedCompany = company
+            selectedCompany = "All companies"
+            searchText = ""
+            collapsedCompanies.remove(company)
+            cardTask = ""
+            isEnteringNewCompany = false
+            hasEditedCapture = false
+            TaskCaptureDraftStore.clear()
+            showingRecordConfirmation = false
+        } catch {
+            modelContext.delete(experience)
+            recordError = error.localizedDescription
+        }
     }
 }
 
@@ -660,6 +1070,7 @@ struct TaskDetailView: View {
     @State private var title: String
     @State private var company: String
     @State private var tasks: String
+    @State private var showingTaskEnhancementReview = false
 
     init(experience: WorkExperience) {
         self.experience = experience
@@ -676,17 +1087,35 @@ struct TaskDetailView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Task details") {
+                Section {
                     if isEditing {
                         TextField("Task title", text: $title)
                         TextField("Company", text: $company)
-                        TextEditor(text: $tasks).frame(minHeight: 180).accessibilityLabel("Task details")
+                        TextEditor(text: $tasks).frame(minHeight: 180)
+                            .accessibilityLabel("Task details")
+                            .accessibilityIdentifier("task.detail.details")
                     } else {
                         LabeledContent("Task", value: experience.jobTitle)
                         LabeledContent("Company", value: experience.company)
                         Text(experience.tasksText.isEmpty ? "No task details yet" : experience.tasksText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
+                    }
+                } header: {
+                    HStack {
+                        Text("Task details")
+                        Spacer()
+                        if isEditing {
+                            Button {
+                                showingTaskEnhancementReview = true
+                            } label: {
+                                Label("Enhance with AI", systemImage: "sparkles")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .disabled(tasks.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .accessibilityLabel("Enhance task details with AI")
+                            .accessibilityIdentifier("task.detail.enhance-ai")
+                        }
                     }
                 }
                 Section("Linked saved resumes (\(linkedResumes.count))") {
@@ -712,6 +1141,7 @@ struct TaskDetailView: View {
                         }
                         .buttonStyle(CoralButtonStyle())
                         .frame(maxWidth: .infinity)
+                        .disabled(showingTaskEnhancementReview)
                     } else {
                         Button("Edit") { isEditing = true }
                             .frame(maxWidth: .infinity)
@@ -752,6 +1182,12 @@ struct TaskDetailView: View {
             .alert("Couldn’t save changes", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
                 Button("OK", role: .cancel) { saveError = nil }
             } message: { Text(saveError ?? "Try again.") }
+            .sheet(isPresented: $showingTaskEnhancementReview) {
+                TaskEnhancementReviewView(original: tasks) { original, suggestion in
+                    guard tasks == original else { return }
+                    tasks = suggestion
+                }
+            }
             .sheet(item: $selectedResume) { resume in ResumePreviewView(resume: resume) }
         }
     }
@@ -1230,9 +1666,8 @@ struct WorkExperienceEditor: View {
     @State private var jobTitle = ""
     @State private var company = ""
     @State private var task = ""
-    @State private var isEnhancing = false
+    @State private var showingTaskEnhancementReview = false
     @State private var saveError: String?
-    @State private var enhanceError: String?
 
     init(experience: WorkExperience) {
         self.experience = experience
@@ -1269,12 +1704,12 @@ struct WorkExperienceEditor: View {
                         Text("Task details")
                         Spacer()
                         Button {
-                            Task { await enhanceTask() }
+                            showingTaskEnhancementReview = true
                         } label: {
-                            Label(isEnhancing ? "Enhancing…" : "Enhance with AI", systemImage: "sparkles")
+                            Label("Enhance with AI", systemImage: "sparkles")
                                 .font(.caption.weight(.semibold))
                         }
-                        .disabled(isEnhancing || task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .accessibilityLabel("Enhance task details with AI")
                         .accessibilityIdentifier("task.enhance-ai")
                     }
@@ -1290,6 +1725,7 @@ struct WorkExperienceEditor: View {
                     }
                     .buttonStyle(CoralButtonStyle())
                     .frame(maxWidth: .infinity)
+                    .disabled(showingTaskEnhancementReview)
                     .disabled(jobTitle.trimmingCharacters(in: .whitespaces).isEmpty || company.trimmingCharacters(in: .whitespaces).isEmpty)
                     .accessibilityIdentifier("task.save")
                 }
@@ -1302,17 +1738,13 @@ struct WorkExperienceEditor: View {
             .alert("Couldn’t save task", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
                 Button("OK", role: .cancel) { saveError = nil }
             } message: { Text(saveError ?? "Try again.") }
-            .alert("AI enhancement unavailable", isPresented: Binding(get: { enhanceError != nil }, set: { if !$0 { enhanceError = nil } })) {
-                Button("OK", role: .cancel) { enhanceError = nil }
-            } message: { Text(enhanceError ?? "Try again.") }
+            .sheet(isPresented: $showingTaskEnhancementReview) {
+                TaskEnhancementReviewView(original: task) { original, suggestion in
+                    guard task == original else { return }
+                    task = suggestion
+                }
+            }
         }
-    }
-
-    private func enhanceTask() async {
-        isEnhancing = true
-        defer { isEnhancing = false }
-        do { task = try await TaskEnhancementService().enhance(task) }
-        catch { enhanceError = error.localizedDescription }
     }
 }
 

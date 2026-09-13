@@ -232,6 +232,32 @@ enum JobCaptureDraftStore {
     static func clear() { UserDefaults.standard.removeObject(forKey: key) }
 }
 
+struct TaskCaptureDraft: Codable, Equatable {
+    var company = ""
+    var jobTitle = ""
+    var task = ""
+    var isEnteringNewCompany = false
+
+    var hasContent: Bool {
+        isEnteringNewCompany || [company, jobTitle, task].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+}
+
+enum TaskCaptureDraftStore {
+    private static let key = "tasks.capture.draft"
+
+    static func load() -> TaskCaptureDraft? {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(TaskCaptureDraft.self, from: data)
+    }
+
+    static func save(_ draft: TaskCaptureDraft) {
+        UserDefaults.standard.set(try? JSONEncoder().encode(draft), forKey: key)
+    }
+
+    static func clear() { UserDefaults.standard.removeObject(forKey: key) }
+}
+
 struct JobCaptureExtractor {
     func extract(urls: [URL]) async throws -> String {
         guard !urls.isEmpty else { throw JobCaptureError.empty }
