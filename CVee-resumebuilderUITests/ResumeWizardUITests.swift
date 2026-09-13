@@ -14,6 +14,8 @@ final class ResumeWizardUITests: XCTestCase {
         let task = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Reduced manual search time'")).firstMatch
         XCTAssertTrue(task.exists)
         capture(app, "tasks-light")
+        for _ in 0..<3 where !group.isHittable { app.swipeUp() }
+        XCTAssertTrue(group.isHittable)
         group.tap()
         XCTAssertFalse(task.exists)
         group.tap()
@@ -29,6 +31,208 @@ final class ResumeWizardUITests: XCTestCase {
             XCTAssertTrue(app.navigationBars[tab].waitForExistence(timeout: timeout))
             capture(app, tab.replacingOccurrences(of: " ", with: "-").lowercased())
         }
+    }
+
+    func testTaskCaptureCardValidationAndRecording() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+
+        let record = app.buttons["tasks.record"]
+        XCTAssertTrue(record.waitForExistence(timeout: timeout))
+        XCTAssertFalse(record.isEnabled)
+
+        let details = app.descendants(matching: .any)["tasks.capture-details"]
+        details.tap()
+        details.typeText("Improved the onboarding flow.")
+        dismissKeyboard(in: app)
+
+        XCTAssertTrue(record.isEnabled)
+        XCTAssertTrue(tapWhenHittable(record, in: app))
+        XCTAssertTrue(app.buttons["tasks.record.improve-ai"].waitForExistence(timeout: timeout))
+        let companyMenu = app.buttons["tasks.confirm-company"]
+        XCTAssertTrue(companyMenu.waitForExistence(timeout: timeout))
+        companyMenu.tap()
+        app.buttons["New company"].tap()
+        let company = app.textFields["tasks.confirm-company-name"]
+        XCTAssertTrue(company.waitForExistence(timeout: timeout))
+        company.tap()
+        company.typeText("Example Studio")
+        dismissKeyboard(in: app)
+        let role = app.textFields["tasks.confirm-role"]
+        XCTAssertTrue(role.waitForExistence(timeout: timeout))
+        role.tap()
+        role.typeText("Product Designer")
+        dismissKeyboard(in: app)
+        app.buttons["Confirm recording"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Product Designer'")).firstMatch.waitForExistence(timeout: timeout))
+    }
+
+    func testTaskRowsLeadWithAchievementAndHideCompanyBadge() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
+        app.launch()
+
+        let task = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Reduced manual search time'")).firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: timeout))
+        XCTAssertFalse(task.label.contains("Accenture Philippines"))
+    }
+
+    func testTypedRoleSurvivesNewCompanySelection() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
+        app.launch()
+
+        let details = app.descendants(matching: .any)["tasks.capture-details"]
+        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        details.tap()
+        details.typeText("Documented a new design decision.")
+        dismissKeyboard(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.record"], in: app))
+
+        let role = app.textFields["tasks.confirm-role"]
+        XCTAssertTrue(role.waitForExistence(timeout: timeout))
+        let seededRole = role.value as? String
+        app.buttons["tasks.confirm-company"].tap()
+        app.buttons["New company"].tap()
+        XCTAssertEqual(role.value as? String, seededRole)
+        app.buttons["Cancel"].tap()
+    }
+
+    func testAIEnhancementCanBeReviewedAndAccepted() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-ui-testing-ai"]
+        app.launch()
+
+        let original = "Improved the onboarding flow."
+        let details = app.descendants(matching: .any)["tasks.capture-details"]
+        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        details.tap()
+        details.typeText(original)
+        dismissKeyboard(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.record"], in: app))
+        app.buttons["tasks.record.improve-ai"].tap()
+
+        XCTAssertTrue(app.staticTexts["task.ai-review.original"].waitForExistence(timeout: timeout))
+        let useSuggestion = app.buttons["task.ai-review.use"]
+        XCTAssertTrue(useSuggestion.waitForExistence(timeout: timeout))
+        XCTAssertTrue(useSuggestion.isEnabled)
+        useSuggestion.tap()
+
+        let preview = app.staticTexts["tasks.record.details-preview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: timeout))
+        XCTAssertTrue(preview.label.contains("Improved task details for testing"))
+        app.buttons["Cancel"].tap()
+    }
+
+    func testAIEnhancementFailureKeepsOriginalAvailable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-ui-testing-ai-failure"]
+        app.launch()
+
+        let original = "Improved the onboarding flow."
+        let details = app.descendants(matching: .any)["tasks.capture-details"]
+        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        details.tap()
+        details.typeText(original)
+        dismissKeyboard(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.record"], in: app))
+        app.buttons["tasks.record.improve-ai"].tap()
+
+        XCTAssertTrue(app.staticTexts["task.ai-review.error"].waitForExistence(timeout: timeout))
+        XCTAssertFalse(app.buttons["task.ai-review.use"].isEnabled)
+        let keepOriginal = app.buttons["task.ai-review.keep"]
+        XCTAssertTrue(revealBelow(keepOriginal, in: app))
+        keepOriginal.tap()
+        XCTAssertTrue(app.staticTexts["tasks.record.details-preview"].label.contains(original))
+        app.buttons["Cancel"].tap()
+    }
+
+    func testAIEnhancementEmptyResponseCannotBeApplied() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-ui-testing-ai-empty"]
+        app.launch()
+
+        let details = app.descendants(matching: .any)["tasks.capture-details"]
+        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        details.tap()
+        details.typeText("Improved the onboarding flow.")
+        dismissKeyboard(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.record"], in: app))
+        app.buttons["tasks.record.improve-ai"].tap()
+
+        XCTAssertTrue(app.staticTexts["task.ai-review.error"].waitForExistence(timeout: timeout))
+        XCTAssertFalse(app.buttons["task.ai-review.use"].isEnabled)
+        app.buttons["Cancel"].tap()
+        app.buttons["Cancel"].tap()
+    }
+
+    func testAIEnhancementReviewWorksInManualEditor() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-ui-testing-ai"]
+        app.launch()
+        app.buttons["tasks.add"].tap()
+        let addManually = app.buttons["Add manually"]
+        XCTAssertTrue(addManually.waitForExistence(timeout: timeout))
+        addManually.tap()
+
+        let details = app.descendants(matching: .any)["task.details"]
+        XCTAssertTrue(app.textFields["Job title"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(revealBelow(details, in: app))
+        details.tap()
+        details.typeText("Improved the onboarding flow.")
+        dismissKeyboard(in: app)
+        app.buttons["task.enhance-ai"].tap()
+        XCTAssertTrue(app.buttons["task.ai-review.use"].waitForExistence(timeout: timeout))
+        app.buttons["task.ai-review.use"].tap()
+        XCTAssertTrue((details.value as? String ?? "").contains("Improved task details for testing"))
+        app.buttons["Cancel"].tap()
+    }
+
+    func testAIEnhancementReviewWorksInExistingTaskEditor() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture", "-ui-testing-ai"]
+        app.launch()
+
+        let task = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Reduced manual search time'")).firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: timeout))
+        task.tap()
+        app.buttons["Edit"].tap()
+        let details = app.descendants(matching: .any)["task.detail.details"]
+        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        app.buttons["task.detail.enhance-ai"].tap()
+        XCTAssertTrue(app.buttons["task.ai-review.use"].waitForExistence(timeout: timeout))
+        app.buttons["task.ai-review.use"].tap()
+        XCTAssertTrue((details.value as? String ?? "").contains("Improved task details for testing"))
+        app.buttons["Cancel"].tap()
+        app.buttons["Done"].tap()
+    }
+
+    func testQuickCaptureDraftRestoresAfterRelaunch() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+
+        let draft = "Unfinished task draft to restore."
+        let details = app.descendants(matching: .any)["tasks.capture-details"]
+        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        details.tap()
+        details.typeText(draft)
+        dismissKeyboard(in: app)
+        app.terminate()
+
+        app.launchArguments = ["-ui-testing", "-ui-testing-preserve-drafts"]
+        app.launch()
+        let restored = app.descendants(matching: .any)["tasks.capture-details"]
+        XCTAssertTrue(restored.waitForExistence(timeout: timeout))
+        XCTAssertEqual(restored.value as? String, draft)
+
+        app.buttons["tasks.add"].tap()
+        XCTAssertTrue(app.buttons["tasks.discard-draft"].waitForExistence(timeout: timeout))
+        app.buttons["tasks.discard-draft"].tap()
+        XCTAssertTrue(app.buttons["tasks.discard-draft-confirm"].waitForExistence(timeout: timeout))
+        app.buttons["tasks.discard-draft-confirm"].firstMatch.tap()
+        XCTAssertFalse(app.buttons["tasks.record"].isEnabled)
     }
 
     func testTaskCreationImportAndClearConfirmation() {
@@ -71,7 +275,9 @@ final class ResumeWizardUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["tasks.add"].waitForExistence(timeout: timeout))
         XCTAssertTrue(app.buttons["tasks.add"].isHittable)
-        XCTAssertTrue(app.buttons["tasks.company-section"].firstMatch.isHittable)
+        let companySection = app.buttons["tasks.company-section"].firstMatch
+        for _ in 0..<3 where !companySection.isHittable { app.swipeUp() }
+        XCTAssertTrue(companySection.isHittable)
         capture(app, "tasks-dark-accessibility")
         app.buttons["Resume Wizard"].firstMatch.tap()
         XCTAssertTrue(app.descendants(matching: .any)["wizard.progress"].waitForExistence(timeout: timeout))

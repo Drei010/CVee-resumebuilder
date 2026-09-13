@@ -7,7 +7,9 @@ struct CVee_resumebuilderApp: App {
 
     init() {
         let isUITesting = ProcessInfo.processInfo.arguments.contains("-ui-testing")
-        if isUITesting, let bundleIdentifier = Bundle.main.bundleIdentifier {
+        if isUITesting,
+           !ProcessInfo.processInfo.arguments.contains("-ui-testing-preserve-drafts"),
+           let bundleIdentifier = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: bundleIdentifier)
         }
 
@@ -36,6 +38,39 @@ struct CVee_resumebuilderApp: App {
             context.insert(job)
             context.insert(resume)
         }
+
+        if ProcessInfo.processInfo.arguments.contains("-mock-data") {
+            seedMockTasks()
+        }
+    }
+
+    private func seedMockTasks() {
+        let context = sharedModelContainer.mainContext
+        let existing = (try? context.fetch(FetchDescriptor<WorkExperience>())) ?? []
+        guard !existing.contains(where: { $0.company.hasPrefix("[Mock]") }) else { return }
+
+        let roles = [
+            ("[Mock] Northstar Labs", "Product Designer"),
+            ("[Mock] Harbor Health", "UX Researcher"),
+            ("[Mock] Pinecone Systems", "iOS Developer"),
+            ("[Mock] Brightline Finance", "Product Manager"),
+            ("[Mock] Atlas Commerce", "Frontend Engineer"),
+            ("[Mock] Cedar Analytics", "Data Analyst")
+        ]
+        let tasks = [
+            "Mapped the customer journey and documented the highest-friction steps.",
+            "Created a reusable component spec and aligned implementation details with engineering.",
+            "Reviewed feedback, grouped recurring themes, and proposed the next iteration.",
+            "Prepared a concise status update with decisions, risks, and follow-up owners.",
+            "Validated the workflow on a representative mobile screen and recorded the findings."
+        ]
+
+        for index in 0..<30 {
+            let role = roles[index / tasks.count]
+            let startDate = Calendar.current.date(byAdding: .month, value: -(index + 1), to: .now) ?? .now
+            context.insert(WorkExperience(jobTitle: role.1, company: role.0, startDate: startDate, tasks: [tasks[index % tasks.count]]))
+        }
+        try? context.save()
     }
 
     var body: some Scene {
