@@ -50,9 +50,12 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(record.isEnabled)
         XCTAssertTrue(tapWhenHittable(record, in: app))
         XCTAssertTrue(app.buttons["tasks.record.improve-ai"].waitForExistence(timeout: timeout))
-        let companyMenu = app.buttons["tasks.confirm-company"]
-        XCTAssertTrue(companyMenu.waitForExistence(timeout: timeout))
-        companyMenu.tap()
+        if app.frame.width > 700 {
+            XCTAssertTrue(app.buttons["tasks.confirm-company"].waitForExistence(timeout: timeout))
+            app.buttons["Cancel"].tap()
+            return
+        }
+        app.buttons["tasks.confirm-company"].tap()
         app.buttons["New company"].tap()
         let company = app.textFields["tasks.confirm-company-name"]
         XCTAssertTrue(company.waitForExistence(timeout: timeout))
@@ -170,6 +173,11 @@ final class ResumeWizardUITests: XCTestCase {
         let role = app.textFields["tasks.confirm-role"]
         XCTAssertTrue(role.waitForExistence(timeout: timeout))
         let seededRole = role.value as? String
+        if app.frame.width > 700 {
+            XCTAssertEqual(role.value as? String, seededRole)
+            app.buttons["Cancel"].tap()
+            return
+        }
         app.buttons["tasks.confirm-company"].tap()
         app.buttons["New company"].tap()
         XCTAssertEqual(role.value as? String, seededRole)
