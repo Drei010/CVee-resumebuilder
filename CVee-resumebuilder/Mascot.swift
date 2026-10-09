@@ -11,6 +11,31 @@ enum MascotMood: String, CaseIterable {
     var animationAssetName: String { "Mascot/cvee-\(rawValue)-animated" }
 }
 
+/// Shared mascot geometry, so Tasks and Saved Jobs show the dog at the same prominence.
+enum MascotMetrics {
+    /// The dog at standard text sizes.
+    static let prominentSize: CGFloat = 112
+    /// The dog at accessibility text sizes, where it stacks above the bubble.
+    static let stackedSize: CGFloat = 72
+    /// How far the dog's lower part reaches over the top edge of the card it leans on.
+    static let leaningOverlap: CGFloat = 22
+    /// How far the bubble's bottom sits above the dog's bottom when the dog leans on a card,
+    /// leaving a small gap above the card.
+    static let leaningBubbleLift: CGFloat = leaningOverlap + 10
+    /// The bubble's trailing tail sits this far above the bubble's bottom, level with the dog's
+    /// head, so a bubble that grows taller with its text still points at the dog.
+    static let leaningTailInset: CGFloat = prominentSize * 0.7 - leaningBubbleLift
+
+    /// The dog leans on the card at standard text sizes; accessibility sizes stack instead,
+    /// so no text is ever covered.
+    static func leansOnCard(at size: DynamicTypeSize) -> Bool { !size.isAccessibilitySize }
+
+    /// Top padding for the card the dog leans on, keeping the card's own content clear of it.
+    static func cardTopPadding(at size: DynamicTypeSize, standard: CGFloat = 16) -> CGFloat {
+        leansOnCard(at: size) ? leaningOverlap + 6 : standard
+    }
+}
+
 struct MascotView: View {
     let mood: MascotMood
     var size: CGFloat = 84
@@ -93,7 +118,7 @@ enum MascotAnimationCache {
 }
 
 /// Plays the mood twice, then rests on the still image, so the dog greets without looping
-/// beside the capture field. A new mood replays it.
+/// on the capture card. A new mood replays it.
 private struct AnimatedMascotImage: UIViewRepresentable {
     let animation: UIImage
     let restingImage: UIImage?
@@ -134,24 +159,85 @@ struct MascotSpeechBubble: View {
     let title: String
     let message: String
     var accessibilityID = "tasks.mascot"
+    var mascotSize: CGFloat = 84
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .trailing, spacing: 2) {
-                MascotView(mood: mood, size: 72)
+                MascotView(mood: mood, size: MascotMetrics.stackedSize)
                     .padding(.trailing, 12)
-                bubble(tail: .top)
+                MascotBubble(title: title, message: message, tail: .top, accessibilityID: accessibilityID)
             }
         } else {
             HStack(alignment: .center, spacing: 0) {
-                bubble(tail: .trailing)
-                MascotView(mood: mood, size: 84)
+                MascotBubble(title: title, message: message, tail: .trailing, accessibilityID: accessibilityID)
+                MascotView(mood: mood, size: mascotSize)
             }
         }
     }
+}
 
-    private func bubble(tail: SpeechBubbleShape.TailEdge) -> some View {
+/// The mascot leaning on a card: the dog sits on the card's top edge at its trailing side with
+/// its lower part over the card, and the speech bubble sits to its leading side above the card.
+/// The dog draws above the card but never takes taps, so the card's controls stay tappable; the
+/// card keeps its own content clear of the dog with `MascotMetrics.cardTopPadding(at:)`. At
+/// accessibility text sizes the dog, bubble and card stack without overlapping.
+struct MascotLeaningCard<Card: View>: View {
+    let mood: MascotMood
+    let title: String
+    let message: String
+    let accessibilityID: String
+    let card: Card
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    init(mood: MascotMood, title: String, message: String, accessibilityID: String = "tasks.mascot",
+         @ViewBuilder card: () -> Card) {
+        self.mood = mood
+        self.title = title
+        self.message = message
+        self.accessibilityID = accessibilityID
+        self.card = card()
+    }
+
+    var body: some View {
+        if MascotMetrics.leansOnCard(at: dynamicTypeSize) {
+            // Negative spacing pulls the card up under the dog, so the row's height still covers
+            // everything and nothing is clipped by the list row.
+            VStack(spacing: -MascotMetrics.leaningOverlap) {
+                HStack(alignment: .bottom, spacing: 4) {
+                    MascotBubble(title: title, message: message, tail: .trailing, accessibilityID: accessibilityID,
+                                 trailingTailInsetFromBottom: MascotMetrics.leaningTailInset)
+                        .padding(.bottom, MascotMetrics.leaningBubbleLift)
+                    MascotView(mood: mood, size: MascotMetrics.prominentSize)
+                        .allowsHitTesting(false)
+                }
+                .padding(.trailing, 8)
+                .zIndex(1)
+                card
+            }
+        } else {
+            VStack(alignment: .trailing, spacing: 12) {
+                VStack(alignment: .trailing, spacing: 2) {
+                    MascotView(mood: mood, size: MascotMetrics.stackedSize)
+                        .padding(.trailing, 12)
+                    MascotBubble(title: title, message: message, tail: .top, accessibilityID: accessibilityID)
+                }
+                card
+            }
+        }
+    }
+}
+
+/// The bubble's title and message on the card surface, read as one element.
+private struct MascotBubble: View {
+    let title: String
+    let message: String
+    let tail: SpeechBubbleShape.TailEdge
+    let accessibilityID: String
+    var trailingTailInsetFromBottom: CGFloat?
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.headline)
@@ -167,8 +253,9 @@ struct MascotSpeechBubble: View {
         .padding(.trailing, tail == .trailing ? 14 + SpeechBubbleShape.tailLength : 14)
         .padding(.top, tail == .top ? SpeechBubbleShape.tailLength : 0)
         .background {
-            SpeechBubbleShape(tail: tail).fill(CVeeColors.card)
-            SpeechBubbleShape(tail: tail).stroke(CVeeColors.divider, lineWidth: 1)
+            let shape = SpeechBubbleShape(tail: tail, trailingTailInsetFromBottom: trailingTailInsetFromBottom)
+            shape.fill(CVeeColors.card)
+            shape.stroke(CVeeColors.divider, lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(accessibilityID)
@@ -181,6 +268,9 @@ struct SpeechBubbleShape: Shape {
     static let tailLength: CGFloat = 10
     var tail: TailEdge
     var cornerRadius: CGFloat = 14
+    /// Holds a trailing tail this far above the bubble's bottom instead of at its middle, for a
+    /// mascot aligned to the bubble's bottom rather than its center.
+    var trailingTailInsetFromBottom: CGFloat?
 
     // One continuous outline, so the fill and the hairline stroke both include the tail.
     func path(in rect: CGRect) -> Path {
@@ -209,9 +299,14 @@ struct SpeechBubbleShape: Shape {
         path.addArc(tangent1End: topRight, tangent2End: bottomRight, radius: radius)
         if tail == .trailing {
             let tailHalf = min(tailHalfWidth, max(0, body.height / 2 - radius))
-            path.addLine(to: CGPoint(x: body.maxX, y: body.midY - tailHalf))
-            path.addLine(to: CGPoint(x: rect.maxX, y: body.midY))
-            path.addLine(to: CGPoint(x: body.maxX, y: body.midY + tailHalf))
+            // Keep the tail on the straight edge, clear of both corners.
+            var tipY = body.midY
+            if let inset = trailingTailInsetFromBottom {
+                tipY = min(max(body.maxY - inset, body.minY + radius + tailHalf), body.maxY - radius - tailHalf)
+            }
+            path.addLine(to: CGPoint(x: body.maxX, y: tipY - tailHalf))
+            path.addLine(to: CGPoint(x: rect.maxX, y: tipY))
+            path.addLine(to: CGPoint(x: body.maxX, y: tipY + tailHalf))
         }
         path.addArc(tangent1End: bottomRight, tangent2End: bottomLeft, radius: radius)
         path.addArc(tangent1End: bottomLeft, tangent2End: topLeft, radius: radius)

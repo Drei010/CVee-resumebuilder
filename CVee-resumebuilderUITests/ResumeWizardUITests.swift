@@ -41,11 +41,11 @@ final class ResumeWizardUITests: XCTestCase {
         app.launchArguments = ["-ui-testing"]
         app.launch()
 
+        let details = expandTaskCapture(app)
         let record = app.buttons["tasks.record"]
         XCTAssertTrue(record.waitForExistence(timeout: timeout))
         XCTAssertFalse(record.isEnabled)
 
-        let details = app.descendants(matching: .any)["tasks.capture-details"]
         details.tap()
         details.typeText("Improved the onboarding flow.")
         dismissKeyboard(in: app)
@@ -75,6 +75,8 @@ final class ResumeWizardUITests: XCTestCase {
         dismissKeyboard(in: app)
         app.buttons["Confirm recording"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["tasks.mascot"].waitForExistence(timeout: timeout))
+        // Recording folds the recorder back into the action card.
+        XCTAssertTrue(app.buttons["tasks.capture-card"].waitForExistence(timeout: timeout))
         XCTAssertTrue(revealHittable(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Product Designer'")).firstMatch, in: app))
     }
 
@@ -95,14 +97,14 @@ final class ResumeWizardUITests: XCTestCase {
 
         let search = app.textFields["tasks.search"]
         XCTAssertTrue(revealHittable(search, in: app))
-        let resultCount = app.staticTexts["tasks.result-count"]
-        XCTAssertTrue(resultCount.waitForExistence(timeout: timeout))
-        XCTAssertTrue(resultCount.label.contains("30"))
+        XCTAssertFalse(app.descendants(matching: .any)["tasks.result-count"].exists)
 
         search.tap()
         search.typeText("Pinecone")
         XCTAssertTrue(app.buttons["tasks.search.clear"].waitForExistence(timeout: timeout))
-        XCTAssertTrue(resultCount.label.contains("5"))
+        // Return closes the keyboard so the filtered sections below the search bar stay on screen.
+        search.typeText("\n")
+        assertOnlyCompanySection("Pinecone", taskCount: 5, in: app)
         app.buttons["tasks.search.clear"].tap()
         XCTAssertFalse((search.value as? String ?? "").contains("Pinecone"))
 
@@ -110,7 +112,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.buttons["[Mock] Pinecone Systems"].tap()
         let chip = app.buttons["tasks.active-company-filter"]
         XCTAssertTrue(chip.waitForExistence(timeout: timeout))
-        XCTAssertTrue(resultCount.label.contains("5"))
+        assertOnlyCompanySection("Pinecone", taskCount: 5, in: app)
         chip.tap()
         XCTAssertFalse(chip.exists)
 
@@ -120,7 +122,8 @@ final class ResumeWizardUITests: XCTestCase {
         let clearFilters = app.buttons["tasks.clear-filters"]
         XCTAssertTrue(clearFilters.waitForExistence(timeout: timeout))
         clearFilters.tap()
-        XCTAssertTrue(resultCount.label.contains("30"))
+        XCTAssertTrue(app.buttons["tasks.company-section"].firstMatch.waitForExistence(timeout: timeout))
+        XCTAssertFalse(app.staticTexts["No matching tasks"].exists)
     }
 
     func testCaptureAndConfirmationDetailsRemainEditable() {
@@ -128,8 +131,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launchArguments = ["-ui-testing"]
         app.launch()
 
-        let details = app.textFields["tasks.capture-details"]
-        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        let details = expandTaskCapture(app)
         details.tap()
         details.typeText("Captured the first version of this achievement.")
         dismissKeyboard(in: app)
@@ -155,8 +157,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launchArguments = ["-ui-testing"]
         app.launch()
 
-        let details = app.textFields["tasks.capture-details"]
-        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        let details = expandTaskCapture(app)
         details.tap()
         details.typeText("A long achievement description with enough words to wrap across multiple lines and exercise the growing capture field before its internal scrolling limit is reached.")
         XCTAssertTrue((details.value as? String ?? "").contains("internal scrolling limit"))
@@ -169,8 +170,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
         app.launch()
 
-        let details = app.descendants(matching: .any)["tasks.capture-details"]
-        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        let details = expandTaskCapture(app)
         details.tap()
         details.typeText("Documented a new design decision.")
         dismissKeyboard(in: app)
@@ -196,8 +196,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launch()
 
         let original = "Improved the onboarding flow."
-        let details = app.descendants(matching: .any)["tasks.capture-details"]
-        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        let details = expandTaskCapture(app)
         details.tap()
         details.typeText(original)
         dismissKeyboard(in: app)
@@ -229,8 +228,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launch()
 
         let original = "Improved the onboarding flow."
-        let details = app.descendants(matching: .any)["tasks.capture-details"]
-        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        let details = expandTaskCapture(app)
         details.tap()
         details.typeText(original)
         dismissKeyboard(in: app)
@@ -251,8 +249,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-ui-testing-ai-empty"]
         app.launch()
 
-        let details = app.descendants(matching: .any)["tasks.capture-details"]
-        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        let details = expandTaskCapture(app)
         details.tap()
         details.typeText("Improved the onboarding flow.")
         dismissKeyboard(in: app)
@@ -315,8 +312,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launch()
 
         let draft = "Unfinished task draft to restore."
-        let details = app.descendants(matching: .any)["tasks.capture-details"]
-        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        let details = expandTaskCapture(app)
         details.tap()
         details.typeText(draft)
         dismissKeyboard(in: app)
@@ -324,8 +320,10 @@ final class ResumeWizardUITests: XCTestCase {
 
         app.launchArguments = ["-ui-testing", "-ui-testing-preserve-drafts"]
         app.launch()
+        // A restored draft opens the recorder on launch, without a tap on the action card.
         let restored = app.descendants(matching: .any)["tasks.capture-details"]
         XCTAssertTrue(restored.waitForExistence(timeout: timeout))
+        XCTAssertFalse(app.buttons["tasks.capture-card"].exists)
         XCTAssertEqual((restored.value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), draft)
 
         app.buttons["tasks.actions"].tap()
@@ -385,11 +383,121 @@ final class ResumeWizardUITests: XCTestCase {
         capture(app, "wizard-dark-accessibility")
     }
 
+    func testTaskCaptureCardStartsCollapsedAndExpands() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+
+        let card = app.buttons["tasks.capture-card"]
+        let details = app.textFields["tasks.capture-details"]
+        XCTAssertTrue(card.waitForExistence(timeout: timeout))
+        XCTAssertTrue(card.isHittable)
+        XCTAssertFalse(details.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["tasks.first-use-guidance"].exists)
+        capture(app, "tasks-capture-collapsed")
+
+        // Tap where the leaning mascot overlaps the card: the dog must not swallow the tap. 8 points
+        // below the card's top edge stays inside MascotMetrics.leaningOverlap (22 points).
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0)).withOffset(CGVector(dx: 0, dy: 8)).tap()
+        XCTAssertTrue(details.waitForExistence(timeout: timeout))
+        let collapse = app.buttons["tasks.capture-collapse"]
+        XCTAssertTrue(collapse.waitForExistence(timeout: timeout))
+        XCTAssertTrue(waitForDisappearance(card))
+        let focused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: details)
+        XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: timeout), .completed)
+        capture(app, "tasks-capture-expanded")
+
+        XCTAssertTrue(revealHittable(collapse, in: app))
+        collapse.tap()
+        XCTAssertTrue(card.waitForExistence(timeout: timeout))
+        XCTAssertTrue(waitForDisappearance(details))
+        XCTAssertFalse(collapse.exists)
+    }
+
+    func testTaskSearchSpansFullWidthWithoutResultCount() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-mock-data"]
+        app.launch()
+
+        let search = app.textFields["tasks.search"]
+        XCTAssertTrue(revealHittable(search, in: app))
+        XCTAssertFalse(app.descendants(matching: .any)["tasks.result-count"].exists)
+        let searchBar = app.descendants(matching: .any).matching(identifier: "tasks.search-bar").firstMatch
+        XCTAssertTrue(searchBar.waitForExistence(timeout: timeout))
+        // Same 16-point side margins as the cards above it. A card row's own accessibility frame
+        // spans the whole list cell, so measure against the window rather than a card.
+        let window = app.windows.firstMatch.frame
+        XCTAssertEqual(searchBar.frame.minX - window.minX, 16, accuracy: 1)
+        XCTAssertEqual(window.maxX - searchBar.frame.maxX, 16, accuracy: 1)
+        // Scroll so the pinned search header and the task list show together.
+        app.swipeUp()
+        XCTAssertTrue(revealHittable(search, in: app))
+        XCTAssertEqual(searchBar.frame.minX - window.minX, 16, accuracy: 1)
+        capture(app, "tasks-search-full-width")
+
+        search.tap()
+        search.typeText("Pinecone\n")
+        assertOnlyCompanySection("Pinecone", taskCount: 5, in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["tasks.result-count"].exists)
+    }
+
+    func testSavedJobsShowsMascotOutsideSearch() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+        selectTab("Saved Jobs", in: app)
+        let mascot = app.descendants(matching: .any)["jobs.mascot"]
+        XCTAssertTrue(mascot.waitForExistence(timeout: timeout))
+        XCTAssertTrue(mascot.label.contains("Save a job you want to land"))
+        capture(app, "saved-jobs-mascot-empty")
+        app.terminate()
+
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
+        app.launch()
+        selectTab("Saved Jobs", in: app)
+        XCTAssertTrue(mascot.waitForExistence(timeout: timeout))
+        XCTAssertTrue(mascot.label.contains("saved job"))
+        capture(app, "saved-jobs-mascot")
+
+        let search = app.searchFields.firstMatch
+        // Newer iOS keeps the search bar tucked under the large title until the list is pulled down.
+        if !search.waitForExistence(timeout: 2) { app.swipeDown() }
+        XCTAssertTrue(search.waitForExistence(timeout: timeout))
+        search.tap(); search.typeText("NO_MATCH_SENTINEL")
+        XCTAssertTrue(app.staticTexts["No matching jobs"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(waitForDisappearance(mascot))
+    }
+
     private func capture(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    /// Quick capture starts as a collapsed action card; open it unless a restored draft already did.
+    private func expandTaskCapture(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        let details = app.textFields["tasks.capture-details"]
+        let card = app.buttons["tasks.capture-card"]
+        if !details.exists, card.waitForExistence(timeout: timeout) {
+            card.tap()
+        }
+        XCTAssertTrue(details.waitForExistence(timeout: timeout), file: file, line: line)
+        return details
+    }
+
+    /// The task list shows one company section, for `company`, holding `taskCount` tasks.
+    private func assertOnlyCompanySection(_ company: String, taskCount: Int, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let sections = app.buttons.matching(identifier: "tasks.company-section")
+        let match = sections.matching(NSPredicate(format: "label CONTAINS %@", company)).firstMatch
+        XCTAssertTrue(match.waitForExistence(timeout: timeout), file: file, line: line)
+        XCTAssertTrue(match.label.contains("\(taskCount)"), "Section '\(match.label)' should count \(taskCount) tasks", file: file, line: line)
+        XCTAssertEqual(sections.matching(NSPredicate(format: "NOT (label CONTAINS %@)", company)).count, 0, file: file, line: line)
+    }
+
+    private func waitForDisappearance(_ element: XCUIElement) -> Bool {
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
+        return XCTWaiter.wait(for: [gone], timeout: timeout) == .completed
     }
 
     private func selectTab(_ name: String, in app: XCUIApplication) {

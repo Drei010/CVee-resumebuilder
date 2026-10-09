@@ -703,7 +703,8 @@ struct WorkHistoryView: View {
     @State private var cardTask = ""
     @State private var isEnteringNewCompany = false
     @State private var didSeedCard = false
-    @State private var cardIsCollapsed = false
+    /// Quick capture opens as a compact action card; a restored draft opens the recorder.
+    @State private var cardIsCollapsed = true
     @State private var showingRecordConfirmation = false
     @State private var recordError: String?
     @State private var showingTaskEnhancementReview = false
@@ -714,6 +715,8 @@ struct WorkHistoryView: View {
     @FocusState private var focusedCaptureField: CaptureField?
     @FocusState private var focusedRecordField: RecordField?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title3) private var captureIconSize: CGFloat = 36
 
     private var companies: [String] {
         Array(Set(experiences.map(\.company).filter { !$0.isEmpty })).sorted()
@@ -772,11 +775,6 @@ struct WorkHistoryView: View {
                 "tasks.mascot")
     }
 
-    private var taskResultLabel: String {
-        let count = filteredExperiences.count
-        return "\(count) \(count == 1 ? "task" : "tasks")"
-    }
-
     private var cardTaskBinding: Binding<String> {
         Binding(get: { cardTask }, set: { cardTask = $0; hasEditedCapture = true; saveCardDraft() })
     }
@@ -789,6 +787,7 @@ struct WorkHistoryView: View {
         Binding(get: { cardCompany }, set: { cardCompany = $0; hasEditedCapture = true; saveCardDraft() })
     }
 
+    /// One full-width search field; an active company filter shows as a removable chip below it.
     private var taskSearchBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -824,54 +823,52 @@ struct WorkHistoryView: View {
                 .frame(minWidth: 44, minHeight: 44)
                 .accessibilityIdentifier("tasks.filter")
             }
+            .padding(.leading, 12)
+            .padding(.trailing, 4)
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(CVeeColors.card, in: RoundedRectangle(cornerRadius: 12))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("tasks.search-bar")
 
-            HStack(alignment: .center, spacing: 8) {
-                Text(taskResultLabel)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(CVeeColors.secondary)
-                    .accessibilityIdentifier("tasks.result-count")
-                if selectedCompany != "All companies" {
-                    Button {
-                        selectedCompany = "All companies"
-                    } label: {
-                        Label(selectedCompany, systemImage: "xmark")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(CVeeColors.objectInk)
-                            .lineLimit(2)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(CVeeColors.objectTint.opacity(0.16), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Remove company filter")
-                    .accessibilityValue(selectedCompany)
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("tasks.active-company-filter")
+            if selectedCompany != "All companies" {
+                Button {
+                    selectedCompany = "All companies"
+                } label: {
+                    Label(selectedCompany, systemImage: "xmark")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(CVeeColors.objectInk)
+                        .lineLimit(2)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(CVeeColors.objectTint.opacity(0.16), in: Capsule())
                 }
-                Spacer(minLength: 0)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove company filter")
+                .accessibilityValue(selectedCompany)
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("tasks.active-company-filter")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .background(CVeeColors.card, in: RoundedRectangle(cornerRadius: 10))
+        .textCase(nil)
         .padding(.horizontal, 16)
+        .padding(.top, 4)
         .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(CVeeColors.page)
     }
 
     var body: some View {
         List {
+            // One row, so the dog can lean over the card's top edge without being clipped.
             let greeting = mascotGreeting
-            MascotSpeechBubble(mood: greeting.mood, title: greeting.title, message: greeting.message, accessibilityID: greeting.id)
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 0, trailing: 12))
-                .listRowBackground(CVeeColors.page)
-                .listRowSeparator(.hidden)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: greeting.mood)
-
-            taskCaptureCard
-                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-                .listRowBackground(CVeeColors.page)
-                .listRowSeparator(.hidden)
+            MascotLeaningCard(mood: greeting.mood, title: greeting.title, message: greeting.message, accessibilityID: greeting.id) {
+                taskCaptureCard
+            }
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
+            .listRowBackground(CVeeColors.page)
+            .listRowSeparator(.hidden)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: greeting.mood)
 
             TaskMetricsSection(snapshot: metricsSnapshot)
                 .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 12, trailing: 16))
@@ -970,7 +967,10 @@ struct WorkHistoryView: View {
                     }
                 }
             } header: {
+                // Plain-list headers add their own side insets; zero them so the bar's 16-point
+                // margins match the cards above instead of doubling up.
                 taskSearchBar
+                    .listRowInsets(EdgeInsets())
             }
         }
         .listStyle(.plain)
@@ -993,21 +993,6 @@ struct WorkHistoryView: View {
         .alert("Couldn’t delete task", isPresented: Binding(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })) {
             Button("OK", role: .cancel) { }
         } message: { Text(deleteError ?? "Try again.") }
-        .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y + $0.contentInsets.top }) { _, offset in
-            guard focusedCaptureField == nil else { return }
-            // Expand only back at the top: collapsing shortens a short list enough to clamp the
-            // offset below the collapse threshold, which would otherwise bounce the card open again.
-            let shouldCollapse = cardIsCollapsed ? offset > 1 : offset > 32
-            guard shouldCollapse != cardIsCollapsed else { return }
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
-                cardIsCollapsed = shouldCollapse
-            }
-        }
-        .onChange(of: focusedCaptureField) { _, field in
-            if field != nil && cardIsCollapsed {
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { cardIsCollapsed = false }
-            }
-        }
         .task { restoreCardOrSeed() }
         .task(id: celebrationID) {
             // Leaving the tab cancels the sleep; the cheer still ends unless a newer one started.
@@ -1045,63 +1030,126 @@ struct WorkHistoryView: View {
         .sheet(isPresented: $showingImport) { TaskImportView() }
     }
 
+    /// Quick capture starts as one action card; tapping it opens the recorder and focuses the
+    /// field, and the chevron folds it away again.
+    @ViewBuilder
     private var taskCaptureCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if cardIsCollapsed {
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { cardIsCollapsed = false }
-                } label: {
-                    HStack {
-                        Text("What is your task today")
-                            .font(.headline.weight(.bold))
-                        Spacer()
+        if cardIsCollapsed {
+            Button {
+                expandCaptureCard()
+            } label: {
+                captureCardSurface(
+                    // The whole card is the target, so the chevron only needs the row's height.
+                    HStack(spacing: 12) {
+                        captureCardHeading
                         Image(systemName: "chevron.down")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(CVeeColors.buttonInk)
+                            .frame(minHeight: 44)
+                            .accessibilityHidden(true)
                     }
-                    .foregroundStyle(CVeeColors.buttonInk)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("tasks.capture-card")
-                .accessibilityHint("Expands the task recorder")
-            } else {
-                Text("What is your task today")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(CVeeColors.buttonInk)
-                Text("Capture a task while it is fresh.")
-                    .font(.caption)
-                    .foregroundStyle(CVeeColors.buttonInk.opacity(0.75))
-
-                TextField("Describe the task or achievement…", text: cardTaskBinding, axis: .vertical)
-                    .font(.subheadline)
-                    .foregroundStyle(CVeeColors.ink)
-                    .textFieldStyle(.plain)
-                    .lineLimit(3...6)
-                    .padding(12)
-                    .focused($focusedCaptureField, equals: .details)
-                    .submitLabel(.done)
-                    .onSubmit { focusedCaptureField = nil }
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
-                    .accessibilityLabel("Task details")
-                    .accessibilityIdentifier("tasks.capture-details")
-
-                Button("Record task") {
-                    focusedCaptureField = nil
-                    recordSheetDetent = .medium
-                    focusedRecordField = nil
-                    showingRecordConfirmation = true
-                }
-                    .buttonStyle(CoralButtonStyle(horizontalPadding: 18, verticalPadding: 8, minimumHeight: 40))
-                    .disabled(!canRecordTask)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .accessibilityIdentifier("tasks.record")
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 16))
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("What is your task today")
+            .accessibilityHint("Expands the task recorder")
+            .accessibilityIdentifier("tasks.capture-card")
+        } else {
+            captureCardSurface(
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 0) {
+                        captureCardHeading
+                        Button {
+                            collapseCaptureCard()
+                        } label: {
+                            Image(systemName: "chevron.up")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(CVeeColors.buttonInk)
+                                .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Collapse task recorder")
+                        .accessibilityIdentifier("tasks.capture-collapse")
+                    }
+                    Text("Capture a task while it is fresh.")
+                        .font(.caption)
+                        .foregroundStyle(CVeeColors.buttonInk.opacity(0.75))
+
+                    // Charcoal ink in both themes: the field stays white in dark appearance too, so
+                    // the prompt is charcoal as well (about 5:1 on white) rather than the pale default.
+                    TextField("Describe the task or achievement…", text: cardTaskBinding,
+                              prompt: Text("Describe the task or achievement…").foregroundStyle(CVeeColors.buttonInk.opacity(0.65)),
+                              axis: .vertical)
+                        .font(.subheadline)
+                        .foregroundStyle(CVeeColors.buttonInk)
+                        .textFieldStyle(.plain)
+                        .lineLimit(3...6)
+                        .padding(12)
+                        .focused($focusedCaptureField, equals: .details)
+                        .submitLabel(.done)
+                        .onSubmit { focusedCaptureField = nil }
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+                        .accessibilityLabel("Task details")
+                        .accessibilityIdentifier("tasks.capture-details")
+
+                    Button("Record task") {
+                        focusedCaptureField = nil
+                        recordSheetDetent = .medium
+                        focusedRecordField = nil
+                        showingRecordConfirmation = true
+                    }
+                        .buttonStyle(CoralButtonStyle(horizontalPadding: 18, verticalPadding: 8, minimumHeight: 40))
+                        .disabled(!canRecordTask)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .accessibilityIdentifier("tasks.record")
+                }
+            )
         }
-        .padding(16)
+    }
+
+    /// The icon and title shared by the collapsed action card and the open recorder.
+    private var captureCardHeading: some View {
+        let iconSize = min(captureIconSize, 56)
+        return HStack(spacing: 12) {
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: iconSize * 0.45, weight: .semibold))
+                .foregroundStyle(CVeeColors.buttonInk)
+                .frame(width: iconSize, height: iconSize)
+                .background(Color.white, in: Circle())
+                .accessibilityHidden(true)
+            Text("What is your task today")
+                .font(.title3.weight(.bold))
+                .foregroundStyle(CVeeColors.buttonInk)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: cardIsCollapsed ? 64 : nil, alignment: .top)
-        .background(CVeeColors.coral, in: RoundedRectangle(cornerRadius: 16))
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: cardIsCollapsed)
+    }
+
+    /// The coral surface behind both card states. Its top padding clears the leaning mascot.
+    private func captureCardSurface<Content: View>(_ content: Content) -> some View {
+        content
+            .padding(.horizontal, 16)
+            .padding(.top, MascotMetrics.cardTopPadding(at: dynamicTypeSize))
+            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(CVeeColors.coral, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func expandCaptureCard() {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { cardIsCollapsed = false }
+        // The field only joins the list once the card has opened, so focus it on the next beat.
+        Task {
+            try? await Task.sleep(for: .milliseconds(reduceMotion ? 50 : 250))
+            if !cardIsCollapsed { focusedCaptureField = .details }
+        }
+    }
+
+    private func collapseCaptureCard() {
+        focusedCaptureField = nil
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { cardIsCollapsed = true }
     }
 
     private var recordTaskConfirmation: some View {
@@ -1229,6 +1277,7 @@ struct WorkHistoryView: View {
             cardTask = draft.task
             isEnteringNewCompany = draft.isEnteringNewCompany
             hasEditedCapture = true
+            cardIsCollapsed = false
             didSeedCard = true
             return
         }
@@ -1296,6 +1345,7 @@ struct WorkHistoryView: View {
             hasEditedCapture = false
             TaskCaptureDraftStore.clear()
             showingRecordConfirmation = false
+            cardIsCollapsed = true
             celebrationID = UUID()
         } catch {
             modelContext.delete(experience)
@@ -1447,6 +1497,7 @@ struct SavedJobsView: View {
     @State private var selectedJob: JobTarget?
     @State private var pendingDeletion: [JobTarget] = []
     @State private var saveError: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let onOpenTasks: () -> Void
 
     init(onOpenTasks: @escaping () -> Void = {}) {
@@ -1464,13 +1515,53 @@ struct SavedJobsView: View {
         }
     }
 
+    /// The mascot's line: a nudge to save the first job, then how many saved jobs are ready for
+    /// a resume, using the same rule as each row's status.
+    private var mascotGreeting: (mood: MascotMood, title: String, message: String) {
+        let count = jobs.count
+        guard count > 0 else {
+            return (.curious, "Save a job you want to land",
+                    "Paste a job description and CVee will tailor your resume to it.")
+        }
+        let ready = jobs.filter(\.isUsableForResume).count
+        let title = "\(count) saved \(count == 1 ? "job" : "jobs")"
+        if ready == count {
+            return (.wink, title, count == 1
+                    ? "It’s ready for a resume. Tailor one in the Resume Wizard."
+                    : "All \(count) are ready for a resume. Tailor one in the Resume Wizard.")
+        }
+        if ready == 0 {
+            return (.wink, title, count == 1
+                    ? "It isn’t ready for a resume yet. Open it to add a description or review it."
+                    : "None are ready for a resume yet. Open one to add a description or review it.")
+        }
+        return (.wink, title, "\(ready) of \(count) are ready for a resume. Open the others to add a description or review them.")
+    }
+
+    /// Hidden while searching so results start at the top.
+    private var showsMascot: Bool {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
         List {
+            if showsMascot {
+                let greeting = mascotGreeting
+                MascotSpeechBubble(mood: greeting.mood, title: greeting.title, message: greeting.message,
+                                   accessibilityID: "jobs.mascot", mascotSize: MascotMetrics.prominentSize)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 12))
+                    .listRowBackground(CVeeColors.page)
+                    .listRowSeparator(.hidden)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: greeting.mood)
+            }
             if filteredJobs.isEmpty {
                 ContentUnavailableView {
                     Label(jobs.isEmpty ? "No saved jobs" : "No matching jobs", systemImage: "bookmark")
                 } description: {
-                    Text(jobs.isEmpty ? "Add a job description to tailor your next resume." : "Try another search to find your saved jobs.")
+                    // With no jobs the mascot above already says what to do; keep only the title and action.
+                    if !(jobs.isEmpty && showsMascot) {
+                        Text(jobs.isEmpty ? "Add a job description to tailor your next resume." : "Try another search to find your saved jobs.")
+                    }
                 } actions: {
                     if jobs.isEmpty { Button("Add job") { showingAddJob = true }.buttonStyle(CoralButtonStyle()) }
                     else { Button("Clear search") { searchText = "" } }
