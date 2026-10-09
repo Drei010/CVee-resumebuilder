@@ -1,32 +1,74 @@
 # CVee Resume Builder
 
-CVee is a SwiftUI iOS resume workspace. It stores reusable work history, saved target jobs, profile details, and generated resumes locally with SwiftData. Resume generation and task rewriting use Apple Foundation Models on supported devices; there is no cloud or API fallback.
+CVee is a SwiftUI resume workspace for iPhone and iPad. It stores reusable work history, saved target jobs, and resumes locally with SwiftData, and profile details in the app's local settings. Resume generation, task import splitting, and task enhancement run through the AI provider chosen in Profile: Apple Intelligence on the device, or OpenAI, Gemini, or Claude with the user's own API key. There is no automatic fallback between providers. The resume report's optional AI suggestions always use Apple Intelligence. Purpose and principles are in [PRODUCT.md](PRODUCT.md); the documentation map and contributor rules are in [AGENTS.md](AGENTS.md); planned work is in [ROADMAP.md](ROADMAP.md) and shipped changes in [CHANGELOG.md](CHANGELOG.md).
 
 ## App functionality
 
 The five tabs are:
 
-- Tasks — add, edit, delete, search, and filter work experiences by company. Each entry stores a role, company, dates, and task/achievement lines. Existing tasks can be rewritten into two concise sentences with on-device AI.
-- Saved Jobs — add pasted job descriptions with a title and company, then search, edit, delete, and inspect resumes linked to a job. The core layer also contains a LinkedIn fetcher, but the current UI only creates pasted-text jobs.
-- Resume Wizard — start fresh with profile information or use a saved/uploaded text-based PDF as a baseline; select work entries; choose a saved job; review a summary; generate; edit the plain text; and save the result.
-- Resumes — browse saved drafts, open an editable resume, preview it, delete it, and share PDF or RTF exports. Saved content currently uses one RTF-backed resume section and the `jakes` template identifier.
-- Profile — edit name, contact links, education, skills, and certifications; read terms; contact support; and permanently clear local tasks, jobs, resumes, and profile data after typing `CLEAR`.
+- Tasks — add, edit, delete, search, and filter work experiences by company. The dog mascot at the top greets you with first-use guidance while the library is empty, cheers for six seconds after a task is recorded with quick capture, and otherwise shows how many tasks are ready to reuse. Quick capture ("What is your task today") records a task with a role and company, and unfinished capture text is kept as a draft across launches. Editable progress widgets sit below quick capture: Tasks by company (a donut chart of the top four companies plus Other) and Used in resumes (the share of tasks linked to a saved resume) are shown by default, and Resumes saved, Jobs ready, and Last 30 days can be added; Edit adds, removes, and reorders them. Tasks can also be added manually or imported from a document. Each entry stores a role, company, dates, and task/achievement lines; an existing task's dates cannot be changed. "Improve with AI" (while recording) and "Enhance with AI" (when adding manually or editing) rewrite a task into at most two concise sentences with the selected AI provider, and the suggestion is reviewed before it replaces the original.
+- Saved Jobs — save target jobs by pasting text or a link, importing one document (PDF, DOCX, or TXT) or up to 10 screenshots, or sharing from another app through the "Save to CVee" share extension. Document and screenshot text is extracted on the device (PDF, DOCX, and TXT text, with Vision OCR for screenshots and PDF pages without a text layer); no AI provider is involved. Title, company, and source URL are optional, but a job needs a description, a valid http(s) source URL, or an attachment. Each job shows Needs description, Needs review, or Ready for resume; a resume can use only a job that is Ready for resume. Imported and shared jobs are listed under Captured jobs. A document or screenshot import is saved as needing review unless "Mark description reviewed" is tapped in the Add job sheet first, and a shared job always arrives needing review; "Mark reviewed" in job detail, or saving an edit, clears that once the job has a description. In job detail, "Fetch description" loads a proposed description from the job's source URL, which is stored only after Save changes, and "Extract description locally" reads attached files. Jobs can be searched, edited, and deleted with confirmation; job detail lists linked saved resumes, and "View tasks" opens the Tasks tab. The Add job sheet keeps an unfinished draft and warns about a possible duplicate (same normalized source URL or description).
+- Resume Wizard — five steps: Profile, Experience, Target Job, Review, and Resume. Start fresh with profile information (prefilled from Profile and saved back to it) or use an uploaded text-based PDF or a saved resume as a baseline; select work entries, adding or importing tasks if needed; choose a saved job that is Ready for resume (tapping a job that is not ready opens its detail sheet to fix it); review the inputs and where the AI processing happens; generate; then preview the PDF, edit the text in Formatted or LaTeX mode, check the job match, and save. Replacing an unsaved draft and starting over ask for confirmation. The draft survives Back and tab navigation but not an app relaunch.
+- Resumes — browse saved resumes (most recently updated first), open, preview, delete with confirmation, and export PDF or RTF through the share sheet. Saved resumes open in a structured section editor with Content and Preview modes: sections can be added (Summary, Experience, Projects, Skills, Education, Certifications, Custom), hidden, reordered, or deleted; the contact header cannot be hidden or deleted; there is a one- or two-page target, undo and redo, and autosave. "Import LaTeX text" turns pasted LaTeX into a new resume. Resumes saved only as RTF open as "Legacy resume" with "Create editable copy", and a resume whose structured data cannot be read shows a read-only preview. "Check job match" opens the resume report. An empty Resumes list offers "Create resume", which opens the wizard.
+- Profile — edit name, email, phone, location, LinkedIn and GitHub links, education, skills, and certifications; choose the AI provider, model, and API keys under Advanced settings → AI Provider; read terms; contact support; see the app version; and permanently clear local data after typing `CLEAR`. Clear all data deletes tasks, jobs, resumes, profile fields, job captures and attachments, the job and task capture drafts, the last-used task company, and the AI provider choice, model choices, and API keys. It does not reset the progress-widget layout.
+
+Outside the app:
+
+- Save to CVee — a share extension that accepts text, one web URL, up to 10 images, and one file (attachments up to 10 MB in total). It saves to an inbox in the shared App Group container, and CVee imports the inbox into Saved Jobs, marked as needing review, when it launches or returns to the foreground. An optional title can be added in the extension.
+- Siri and Shortcuts — two App Shortcuts, "Create a New Resume" ("Create a resume in CVee", "Start a resume with CVee") and "Open Work History" ("Open work history in CVee"). Both only open the app; neither switches tabs, so a cold launch shows Tasks.
+
+## AI providers
+
+- Profile → Advanced settings → AI Provider offers Apple Intelligence, OpenAI, Gemini, and Claude. Apple uses the system model; the other three each offer a fixed list of three models. Apple runs on the device with Foundation Models. It is the default when the device supports Apple Intelligence; on a device that does not, the Apple option is disabled and no provider is selected until one is chosen.
+- OpenAI, Gemini, and Claude need the user's own API key. Keys are stored in the Keychain on this device only, need device authentication to read, and are not checked with the provider when saved. What a remote provider receives, and that it may charge the user's account, is set out in [PRODUCT.md](PRODUCT.md#privacy-and-provider-choice).
+- Resume generation, task import splitting, and task enhancement use the selected provider. With no provider or no key, task import and enhancement fail with the message "Choose an AI provider and add its API key in Profile → AI Provider." The wizard instead keeps Generate disabled and offers "Configure AI provider" on its Review step.
+- In the resume report, "Suggest with Apple Intelligence" and "Find related evidence" always use Apple Intelligence on the device, whatever provider is selected.
+- Prompt text and the runtime contract are in [PromptSpec.md](PromptSpec.md).
+
+## Resume report
+
+"Check job match" ("Match" in the wizard's compact action row) opens the resume report, which shows:
+
+- Phrase coverage — the user confirms exact phrases from the linked job's description (typed, picked from local suggestions, or suggested by Apple Intelligence), and the report marks each as Mentioned or Not found, with a "n of m reviewed requirements mentioned" summary. It is a case-insensitive whole-term phrase match, not an ATS score; what coverage does not prove is set out in [PRODUCT.md](PRODUCT.md#resume-reports-are-advisory). Phrases confirmed with "Save requirements" are stored on the job when the report is then closed with Done, and must be reviewed again if the description changes. Without a linked job, only document health is available.
+- Possible supporting evidence — work-library entries that mention a confirmed phrase, marked as included in the resume or not. "Find related evidence" adds quotations that Apple Intelligence picks from the work library. Evidence is shown for review only and is never inserted into the resume.
+- Document health — PDF text preservation, page count against a one- or two-page target, text below 10 pt, a contact email, empty sections, and repeated lines.
+
+Findings are advisory: they never change resume text or block saving or exporting. For a saved resume the report reads the resume's RTF section text, which only the wizard writes, so later edits in the section editor are not reflected, and editable copies and LaTeX imports have no text for it to check.
 
 ## Import and generation limits
 
-- Task import accepts PDF, TXT, and DOCX files up to 10 MB and 100,000 characters. Text is previewed, split into selectable task drafts with Apple Intelligence, and saved under one role/company.
-- Resume baselines accept readable PDFs or previously saved resumes.
-- Full name and email are required for a fresh wizard run; at least one work entry and one saved job are also required.
-- AI availability is checked before generation or task analysis. The UI reports unsupported devices, disabled Apple Intelligence, and a model that is still preparing.
-- Prompts require facts-only, ATS-oriented output and prohibit invented employers, dates, credentials, technologies, responsibilities, and metrics. Generated text must still be reviewed before use.
+- Task import accepts one PDF, TXT, or DOCX file up to 10 MB and 100,000 characters (PDF text layer only, no OCR). "Analyze with AI" sends the text to the selected AI provider, 20 lines per request, and shows the result as selectable, editable task drafts, with the source document in a collapsible section. Each selected draft is saved as its own task under one role, company, and date range.
+- Job capture accepts one document (PDF, DOCX, or TXT) or up to 10 images (PNG, JPEG, HEIC, or TIFF), never mixed, up to 10 MB in total and 100,000 characters. PDFs can have at most 20 pages; pages with almost no text layer are read with OCR.
+- "Fetch description" accepts http and https URLs, uses a 20-second request timeout, reads at most 2 MB, and needs readable text on the page.
+- Resume baselines accept a PDF with readable text (more than 40 characters) or a previously saved resume.
+- Generating requires a full name and email for a fresh start (or a baseline for an existing resume), at least one work entry, a saved job that is Ready for resume, and a ready AI provider. For Apple Intelligence the wizard reports an unsupported device, Apple Intelligence turned off, or a model that is still preparing; for the other providers it checks only that a key is saved. Task import and enhancement report the same problems as errors when they run.
+- Generation prompts ask for facts-only, ATS-oriented plain text (the facts-only rule lives in [PRODUCT.md](PRODUCT.md#facts-only)). Generated text must still be reviewed before use.
 
 ## Data and platform
 
 - SwiftData models: `WorkExperience`, `JobTarget`, `Resume`, and cascading `ResumeSection`.
-- Profile fields use `@AppStorage`; test launches use an in-memory SwiftData container.
-- Minimum platform/build settings are defined by the Xcode project (currently iOS 26.0; the project uses Swift 5).
-- ZIPFoundation is used only for DOCX text extraction.
+- A resume saved from the wizard stores a structured document (JSON, used by the section editor, preview, and export) plus one RTF section. Editable copies and LaTeX imports store only the structured document, and older resumes may have only RTF sections. Every resume records the `jakes` template identifier, which the app does not read.
+- `JobTarget` also keeps the capture source, review state, attachment references, and the confirmed requirement checklist.
+- Profile fields, the last-used task company, and the progress-widget layout (`tasks.metricWidgets`) use `@AppStorage`. UserDefaults also holds the AI provider and model choices and the job and task capture drafts. API keys are in the Keychain. Shared and imported job files are stored in the App Group container (`group.com.drei010.CVee-resumebuilder`), or in Application Support when that container is unavailable.
+- There are no accounts and no sync code. The app makes network requests only to the selected remote AI provider and to a job's source URL when "Fetch description" is used.
+- Test launches use an in-memory SwiftData container. If the on-disk store cannot be opened, the app falls back to an in-memory store without telling the user.
+- Minimum platform and build settings are defined by the Xcode project (currently iOS 26.0 on iPhone and iPad; the project uses Swift 5).
+- ZIPFoundation, the only package dependency, is used only for DOCX text extraction (task import and job document import).
 
 ## Build and test
 
-Open `CVee-resumebuilder.xcodeproj`, select the `CVee-resumebuilder` scheme, and run on an iOS Simulator or device. The `CVee-resumebuilderUITests` target covers wizard progress, required fields, forward navigation, and back navigation. The repository helper is `scripts/test-ios.sh`; it discovers an iPhone Simulator, builds for testing, and runs the UI test target.
+Open `CVee-resumebuilder.xcodeproj`, select the `CVee-resumebuilder` scheme, and run on an iOS Simulator or device. The app embeds the `ShareExtension` target.
+
+- `CVee-resumebuilderTests` (unit tests, hosted in the app) covers structured resume conversion, rendering, and PDF/RTF export; LaTeX import; resume report matching, coverage, health findings, and saved-checklist invalidation; job capture URL normalization, the description-or-URL save rule, and title/company suggestions; provider persistence; and progress-widget metrics and layout.
+- `CVee-resumebuilderUITests` (XCUITest) covers Tasks capture, search, filters, drafts, and AI suggestions with stubbed results; wizard progress, required fields, forward and back navigation, reviewing a job from the wizard, generation from a fixture, job match, editing, saving with a retry after a failed save, and reopening; Saved Jobs search; AI provider configuration; progress widgets; first-use guidance; an accessibility audit; dark mode, large text, and landscape checks; and the Clear all data and deletion confirmations (cancelled, not carried out).
+
+`scripts/test-ios.sh` runs both test targets on one simulator. Run it from the repository root:
+
+```sh
+scripts/test-ios.sh                         # iPhone simulator, preferring iPhone 17
+IOS_DEVICE_FAMILY=iPad scripts/test-ios.sh  # iPad simulator, preferring iPad (A16)
+```
+
+It boots the simulator, builds for testing into `.derivedData/` without code signing, and runs the tests serially with code coverage. The result bundle is written to `TestResults-<family>.xcresult` in the repository root; the destination list, build and test logs, and a test summary go to `ci-diagnostics/` (override with `CI_DIAGNOSTICS_DIR`). `IOS_SIMULATOR_DESTINATION` selects a specific destination. The script exits 70 if `xcodebuild` cannot list destinations, for example when CoreSimulator is unavailable, and exits 1 if no simulator of the requested family is found.
+
+CI (`.github/workflows/ios-tests.yml`) runs on pushes and pull requests to `main` and on `v*` tags. For iPhone and iPad it runs SwiftLint in strict mode (`.swiftlint.yml`: two rules, app sources only), then `scripts/test-ios.sh`, and uploads the result bundles and diagnostics.
