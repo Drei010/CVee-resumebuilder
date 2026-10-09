@@ -1,0 +1,56 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "8AA30F35-4FF9-425F-8CD6-910A8AD251A3",
+        "deviceName" : "iPhone 17 Pro Max",
+        "modelName" : "iPhone 17 Pro Max",
+        "osBuildNumber" : "23F77",
+        "osVersion" : "26.5",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 0,
+      "passedTests" : 42,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "CVee-resumebuilder · Built with macOS 27.0.1",
+  "expectedFailures" : 0,
+  "failedTests" : 0,
+  "finishTime" : 1790772449.91,
+  "passedTests" : 42,
+  "result" : "Passed",
+  "runtimeWarnings" : [
+    {
+      "issueType" : "Runtime Warning",
+      "message" : "Invalid frame dimension (negative or non-finite)."
+    },
+    {
+      "issueType" : "Runtime Warning",
+      "message" : "Invalid frame dimension (negative or non-finite)."
+    }
+  ],
+  "skippedTests" : 0,
+  "startTime" : 1790771758.577,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+
+  ],
+  "title" : "Test - CVee-resumebuilder",
+  "topInsights" : [
+    {
+      "category" : "Longest Test Runs",
+      "impact" : "16% of duration",
+      "text" : "1 longest test run with outlier durations exceeding 95.77s (three standard deviations)"
+    }
+  ],
+  "totalTestCount" : 42
+}
