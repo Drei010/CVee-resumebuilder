@@ -20,6 +20,14 @@ colors:
   object-ink-light: "#2855A2"
   object-ink-dark: "#A8C5FF"
   object-tint: "#4573D2"
+  chart-1-light: "#0F7C8A"
+  chart-1-dark: "#4FC3CF"
+  chart-2-light: "#7A4FC9"
+  chart-2-dark: "#B79CF0"
+  chart-3-light: "#A86A00"
+  chart-3-dark: "#F0AE4A"
+  chart-4-light: "#B2457F"
+  chart-4-dark: "#F08FC0"
 typography:
   body:
     fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif"
@@ -32,6 +40,7 @@ typography:
     fontWeight: 600
 rounded:
   button: "8px"
+  card: "12px"
   capsule: "999px"
 spacing:
   metadata-x: "9px"
@@ -70,80 +79,124 @@ Native SF typography, native navigation, and adaptive semantic colors make the s
 
 ## Colors
 
-Warm coral marks actions; restrained blue metadata and green selection provide supporting meaning. Frontmatter contains the extracted primitive values; light/dark pairs resolve through `CVeeColors` in `ContentView.swift`.
+Warm coral marks actions; restrained blue metadata and green selection provide supporting meaning; a separate chart palette carries data. Frontmatter contains the extracted primitive values; light/dark pairs resolve through `CVeeColors` in `ContentView.swift`.
 
 ### Primary
-- **Warm Coral:** primary button and quick-capture surfaces, and the current wizard step. Stable across themes.
-- **Action Ink:** deeper coral text in light appearance and lighter coral text in dark appearance, for native links, controls, and selected navigation.
+- **Warm Coral:** primary buttons, the quick capture card, and the current wizard step. Stable across themes.
+- **Action Ink:** deeper coral text in light appearance and lighter coral text in dark appearance, for native links, controls, selected navigation, and an active filter.
 
 ### Secondary
-- **Object Blue:** a soft tint at 16% opacity behind metadata capsules; separate deeper light-mode and lighter dark-mode foregrounds keep text legible.
-- **Selection Green:** selected circles, completed wizard progress segments, and ready-status labels. Darker green in light appearance keeps small text readable. It does not introduce task completion behavior.
+- **Object Blue:** a soft tint at 16% opacity behind metadata capsules and the active company-filter chip; separate deeper light-mode and lighter dark-mode foregrounds keep text legible.
+- **Selection Green:** selected circles, completed wizard progress segments, ready-status labels, the saved API key status, and the add icons in the widget editor. Darker green in light appearance keeps small text readable. It does not introduce task completion behavior.
+
+### Chart Series
+- **Chart 1–4:** teal, purple, ochre, and magenta (`CVeeColors.chart1`–`chart4`), each a light/dark pair that holds at least 4:1 on the card surface in both themes. Secondary ink marks the Other slice. The Used in resumes bar uses Chart 1.
 
 ### Neutral
 - **Canvas White / Canvas Charcoal:** primary screen backgrounds.
-- **Quiet Surface:** grouped form backgrounds.
-- **Hairline Divider:** list separators and future wizard segments.
-- **Primary Ink:** adaptive body text; the light-mode charcoal also stays on coral button surfaces in both themes.
-- **Secondary Ink:** descriptions, date ranges, and counts.
+- **Quiet Surface:** grouped form rows, and the card surface for progress widgets, the task search field, the Import tasks row, and the speech bubble.
+- **Hairline Divider:** list separators, upcoming wizard segments, the speech bubble outline, and the empty donut ring.
+- **Primary Ink:** adaptive body text. Its light-mode charcoal stays fixed in both themes for enabled coral button labels and for the quick capture card's icon, title, and white-field text.
+- **Secondary Ink:** descriptions, date ranges, counts, Saved Jobs row chevrons, and the Other chart slice.
 
-**The Accent Rule.** Keep coral focused on actions and active state; use object tint only for compact metadata.
+**The Accent Rule.** Keep coral focused on actions and active state; use object tint only for compact metadata and the active filter chip.
+
+**The Data Color Rule.** Use chart colors only for data, and keep coral, green, and object blue out of charts. Give every slice a labeled legend row so color is never the only cue.
 
 ## Typography
 
 **Display Font:** native SF through SwiftUI semantic styles.
 **Body Font:** native SF through SwiftUI semantic styles.
-**Label/Mono Font:** SF; monospaced digits for dates/counts and the native monospaced body style for text export previews.
+**Label/Mono Font:** SF; monospaced digits for dates, counts, and widget values; the native monospaced body style for the wizard's LaTeX editor and the LaTeX import sheet, and a monospaced caption for a resume's original source.
 
 Native SF is explicitly permitted by the supplied reference; no bundled font is required. Frontmatter weights capture recurring roles, while semantic SwiftUI styles own size, leading, and Dynamic Type behavior. CSS lengths in portable tokens correspond to iOS points at the default content size, not a fixed type-scale contract.
 
 ### Hierarchy
 - **Display:** native navigation titles; detail screens may use inline titles.
-- **Headline:** `.headline` for wizard steps and saved content titles.
-- **Row:** `.subheadline.weight(.medium)` for work experience titles.
-- **Body:** native body text and subheadline descriptions.
-- **Label:** semibold caption metadata, bold caption company headers, and semibold subheadline primary buttons.
+- **Card title:** bold `.title3` for the quick capture card's title.
+- **Headline:** `.headline` for wizard steps, saved content titles, and the speech bubble title.
+- **Row:** `.subheadline.weight(.medium)` for the achievement that leads each task row.
+- **Body:** native body text and subheadline descriptions, including the speech bubble message.
+- **Widget value:** bold rounded `.largeTitle` with monospaced digits.
+- **Label:** semibold caption metadata and widget titles, bold caption company headers, and semibold subheadline primary buttons and the "Your progress" heading.
 
 ## Layout
 
-Plain, vertically scrolling lists establish the main spatial rhythm. Work history groups by company with collapsible headers. Rows lead with the achievement, followed by role and dates; the full row opens editing. Wizard selection rows also show company metadata. The observed row stack and gap tokens are in frontmatter.
+Plain, vertically scrolling lists establish the main spatial rhythm. Work history groups by company with collapsible headers. Task rows lead with the achievement, followed by role and dates; tapping a row opens a read-only detail sheet, and editing starts from its Edit action. Wizard experience rows also show company metadata. The observed row stack and gap tokens are in frontmatter.
 
-Tasks opens with the dog mascot leaning on the quick capture card, its speech bubble beside it, then editable progress widgets, document import, the task search, and a native toolbar menu for manual entry. Quick capture starts as a coral action card (icon, "What is your task today", chevron); tapping it opens the recorder and focuses the field, and its chevron folds it again. A restored draft opens it on launch; recording a task folds it. The task search is one card-surface field with the same 16-point side margins and 12-point radius as the cards above and no result count; an active company filter appears as a removable chip below it. The bubble carries first-use guidance until experience exists, then a short count of reusable tasks. Native navigation, forms, keyboard behavior, and safe areas govern supporting screens. Wizard progress uses 18-point horizontal and 12-point vertical padding, with 2-point segments separated by 4 points.
+Tasks opens with the dog mascot leaning on the quick capture card, its speech bubble beside it, then the progress widgets, the Import tasks row, and the task search, which heads the grouped task list. Each of these sits on the canvas with 16-point side margins and 12 points below it. A native toolbar menu holds manual entry and, while an unfinished capture draft exists, Discard draft. Saved Jobs shows the mascot and its speech bubble above the list, hidden while searching, then its Captured jobs and Saved jobs sections.
+
+Native navigation, forms, keyboard behavior, and safe areas govern supporting screens. Wizard progress uses 18-point horizontal and 12-point vertical padding, with 2-point segments separated by 4 points.
 
 Primary plain lists and WorkspaceSurface content are centered with a maximum width of 760 points. Keep this readable single-column limit on wide displays; no custom breakpoint or multi-pane iPad contract is implemented.
 
 ## Elevation & Depth
 
-Ordinary rows stay flat, separated by hairlines. Grouped forms use tonal surface contrast. System sheets, menus, and bars retain native presentation.
+Ordinary rows stay flat, separated by hairlines. Grouped forms, widget tiles, the task search field, and the speech bubble use tonal surface contrast, never shadows. The mascot is the one layered element: it draws over the quick capture card's top edge. System sheets, menus, and bars retain native presentation.
 
 **The Flat List Rule.** Use separators and spacing for list hierarchy; retain native elevation for sheets and bars.
 
 ## Shapes
 
-Primary buttons use gently rounded rectangles. Metadata uses capsules. List rows remain rectangular and edge-aligned. Native form grouping retains platform shape behavior. Selection uses SF Symbols circles rather than custom illustration.
+Primary buttons use gently rounded 8-point rectangles. Cards on Tasks (progress widgets, the Import tasks row, the task search field) use a 12-point radius; the quick capture card uses 16 points and its white input field 8 points. The speech bubble has 14-point corners and a tail pointing at the mascot. Metadata and the filter chip use capsules. List rows remain rectangular and edge-aligned. Native form grouping retains platform shape behavior. Selection uses SF Symbols circles rather than custom illustration; the mascot is the only illustration.
 
 ## Components
 
 ### Buttons
-Coral primary actions use charcoal labels in both themes, the frontmatter padding, and a minimum 44-point height. Pressing reduces coral opacity to 80%; disabled surfaces use 40%. Task detail uses action ink for the affirmative Edit action and semantic red for the destructive Delete action, with the native confirmation alert retained. Secondary toolbar and navigation actions use native controls. Avoid importing the reference's white-on-coral small text where the implementation deliberately uses darker ink.
+Coral primary actions use the frontmatter padding, an 8-point radius, and a minimum 44-point height. Enabled labels are charcoal in both themes. Pressing reduces coral opacity to 80%; disabled buttons drop it to 40% and switch the label to adaptive ink, so it stays readable on the dimmed coral in dark appearance. Compact placements reduce the padding: the API key Save, the wizard's compact Save, and quick capture's Record task, which keeps a 40-point minimum height. Task detail uses action ink for the affirmative Edit action and semantic red for the destructive Delete action, with the native confirmation alert retained. Secondary toolbar and navigation actions use native controls. Avoid importing the reference's white-on-coral small text where the implementation deliberately uses darker ink.
 
 ### Chips
-Metadata capsules use the object tint at 16% with adaptive object ink and semibold caption text. They describe content and are not standalone filter controls.
+Metadata capsules use the object tint at 16% with adaptive object ink and semibold caption text. They describe content and are not controls. The one capsule control is the Tasks company-filter chip: the same tint, ink, and type plus an xmark, a 44-point minimum height, and the accessibility label "Remove company filter". Tapping it clears the filter.
 
 ### Cards / Containers
-Grouped forms use the quiet adaptive surface through `WorkspaceSurface`. Primary lists use the canvas, not a stack of floating cards. No custom card-shadow vocabulary exists.
+Grouped forms use the quiet adaptive surface through `WorkspaceSurface`. Primary lists use the canvas, not a stack of floating cards; on Tasks only the controls above the list are cards: the coral quick capture card and card-surface tiles for the widgets, Import tasks, and the search field. No custom card-shadow vocabulary exists.
+
+### Quick Capture Card
+Quick capture starts as a coral action card: a white circle with the compose icon, "What is your task today", and a down chevron, all in charcoal, with the whole card as the tap target. Tapping it opens the recorder and focuses the field; an up chevron with a 44-point hit region folds it again. Open, it adds a short caption, a white multi-line field with charcoal text and prompt in both themes, and a compact Record task button that stays disabled until there is text. Record task opens a sheet to confirm the details, role, and company. A restored draft opens the card; recording a task folds it. Opening and folding use a 200ms ease-out, which Reduce Motion removes. The card's top padding keeps its title and chevron clear of the leaning mascot.
+
+### Task Search
+The task search is one card-surface field with a 12-point radius and the same 16-point side margins as the cards above it. It holds a search icon, a clear button while text is entered, and a company filter menu whose icon turns action ink while a filter is active. It shows no result count. An active company filter appears below the field as the removable chip described under Chips.
+
+### Mascot and Speech Bubble
+The dog mascot appears on Tasks and Saved Jobs at 112 points. On Tasks it leans on the quick capture card: it sits on the card's top edge at the trailing side with its lower part over the card, and the bubble sits to its leading side. On Saved Jobs the bubble and dog sit above the list. The mascot is decorative: it never takes taps and is hidden from accessibility, and the bubble's title and message are read as one element.
+- **Moods follow state.** Curious for first-use guidance (no tasks, or no saved jobs); joyful for six seconds after quick capture records a task; wink otherwise.
+- **Messages stay short and factual.** Tasks shows first-use guidance until experience exists, then a count of reusable tasks. Saved Jobs nudges the first save, then says how many saved jobs are ready for a resume, using the same rule as each row's status. With no saved jobs, the empty state below keeps only its title and Add job, so the message is not repeated.
+- **Motion.** Each mood has a still image and an animated WebP in the asset catalog (`Mascot/cvee-<mood>` and `Mascot/cvee-<mood>-animated`). The animation plays twice when a mood appears, then rests on the still; frames decode off the main thread. Reduce Motion or turning off Auto-Play Animated Images shows the still only.
+- **Bubble.** Card surface with a divider hairline and a tail pointing at the mascot. The title uses `.headline` in primary ink; the message uses `.subheadline` in secondary ink.
+- **Accessibility sizes.** The dog shrinks to 72 points and sits above the bubble, whose tail points up; on Tasks the card follows below without overlap.
+
+### Progress Widgets
+A "Your progress" row sits below quick capture, with Edit (Add widgets when none are shown) in action ink. Widgets are card-surface tiles with a 12-point radius and no shadow, laid out two per row with equal heights within a row; a lone widget stays half width, and accessibility sizes use one per row. The default pair is Tasks by company (a donut of the top four companies plus Other, with the total in the center and a legend row for every slice) and Used in resumes (the percent of tasks linked to a saved resume, with a Chart 1 bar). Resumes saved, Jobs ready, and Last 30 days can be added. Edit opens a full-height native list in edit mode to add, remove, reorder, or reset to the default; the layout persists in `tasks.metricWidgets`. Each tile is read as one element: its title and a spoken summary.
+
+**Coverage is descriptive only.** Widgets count what is stored on the device. They never score a resume or imply hiring outcomes.
 
 ### Inputs / Fields
-Use native TextField, TextEditor, searchable, and form rows with persistent field labels where present. Native focus and keyboard behavior remain authoritative. Wizard prompts explicitly use adaptive secondary ink, as do saved-job and resume dates. Required identity-field guidance appears before the fields. Preserve these contrast treatments instead of inheriting pale default prompts. Keep error and availability messages explicit in text. Profile, provider-key, and structured resume inputs retain persistent labels. Required wizard fields are marked, and disabled Continue actions explain the missing prerequisite. Use keyboard dismissal controls and native focus progression. In the wizard, keyboard dismissal lives in the top navigation bar while a field is focused, keeping the bottom action clear at accessibility text sizes.
+Use native TextField, TextEditor, and form rows with persistent field labels where present. Saved Jobs and the wizard's experience and job steps use native `searchable`; Tasks uses the custom search field above. Native focus and keyboard behavior remain authoritative. Wizard prompts explicitly use adaptive secondary ink, as do saved-job and resume dates. Required identity-field guidance appears before the fields. Preserve these contrast treatments instead of inheriting pale default prompts. Keep error and availability messages explicit in text. Profile, provider-key, and structured resume inputs retain persistent labels. Required wizard fields are marked, and disabled Continue actions explain the missing prerequisite. Use keyboard dismissal controls and native focus progression.
 
 ### Navigation
 Retain five native tabs: Tasks, Saved Jobs, Resume Wizard, Resumes, Profile. Each owns a NavigationStack. Adaptive action ink marks the active tint; page-colored toolbar backgrounds integrate with the canvas. Native dimensions and adaptations remain system-owned.
 
-### Experience Row and Selection
+### Rows and Selection
 Company headers expose expanded/collapsed accessibility state and a minimum 44-point hit region. Selection circles appear in import and wizard choice flows, expose state on their owning control, and hide the decorative symbol from accessibility. Selection animates with 200ms ease-out and a 1.05 selected scale; Reduce Motion disables that animation. Company collapse uses the same duration and Reduce Motion guard.
 
-### Wizard Progress
-A textual step name and count accompany thin segments: green for prior steps, coral for current, divider tone for upcoming. Accessibility reads the step and title together. Native safe-area bottom actions carry Back, Continue, or Generate Resume as applicable. On the generated step, Edit/Preview, Match, and Save remain in that bar rather than below the PDF. At accessibility sizes, secondary actions stack and the navigation title becomes inline. Step guidance wraps and is read with the step name; it is hidden visually while an identity field has keyboard focus.
+Saved Jobs rows show the title, a company capsule, a status (green when ready for a resume, secondary otherwise), and the date, and end with a secondary-ink chevron so the whole row reads as tappable, like the Import tasks row and the Resumes list. Each Saved Jobs row is read as one element.
+
+### Empty States, Confirmation, and Failures
+- Empty libraries offer their next action: Saved Jobs offers Add job, Resumes offers Create resume (which opens the wizard), and the wizard's experience and job steps offer Add experience and Add job. The Tasks empty state has no button; quick capture sits above it.
+- Searches with no results offer a way back: Clear search, or Clear search and filters on Tasks.
+- Deleting a task, job, resume, resume section, or API key, and discarding an unfinished capture draft, require confirmation. Clear all data requires typing CLEAR.
+- Failed saves and deletions are reported in an alert or inline message, and the current content is kept.
+
+### Resume Wizard
+A textual step name and count accompany thin segments: green for prior steps, coral for current, divider tone for upcoming. Accessibility reads the step count, title, and guidance as one element. Step guidance wraps and is hidden visually while any wizard field has keyboard focus, including the generated-resume editor. Keyboard dismissal lives in the top navigation bar while a field is focused, keeping the bottom action clear at accessibility text sizes. At accessibility sizes the navigation title becomes inline.
+
+Native safe-area bottom actions carry Back, Continue, or Generate Resume (Generate replacement once a draft exists) as applicable, with a line above them explaining any missing prerequisite. On the generated step, Edit/Preview, Match, and Save stay in that bar rather than below the PDF; when they do not fit in one row, at any text size, they stack with full labels (Edit resume, Check job match, Save Resume).
+- **Review before generating.** The summary shows Profile, Experience, and Target job as separate review rows, each with its own Edit action. The provider and processing location have their own AI processing section with a Configure AI provider button.
+- **Errors and recovery come first.** Errors appear at the top of the summary and the draft page, and Return to draft appears before the review rows.
+- **Drafts survive navigation.** The generated draft and selections stay available across Back and tab switches for the current session only. Start over requires confirmation, replacing an unsaved draft requires confirmation, and a failed replacement keeps the current draft.
+- **Unfinished jobs are repaired in place.** Choosing a job that needs a description or review opens its existing review sheet inside the wizard.
+- **Edited text is the source of truth.** The preview, the saved structured content, and export use the current edited text; the saved-resume editor flushes pending changes before export.
+- **Phrase coverage is advisory.** The resume report says which reviewed phrases are mentioned and does not verify proficiency or eligibility.
 
 ## Do's and Don'ts
 
@@ -152,27 +205,12 @@ A textual step name and count accompany thin segments: green for prior steps, co
 - Do use native semantic type styles and allow content to grow with Dynamic Type.
 - Do keep selection state available as text to assistive technology.
 - Do preserve readable foregrounds on coral and pale object tints.
+- Do keep generated actions reachable in the safe-area bar and retain draft content during navigation.
+- Do place draft recovery and errors before review content, with wizard keyboard dismissal in the top navigation bar.
 
 ### Don't:
 - Don't add boards, inboxes, assignees, completion workflows, or other Asana features from the visual reference.
 - Don't replace the charcoal dark canvas with pure black.
 - Don't add shadows to ordinary list rows or turn metadata into heavy color slabs.
 - Don't replace adaptive secondary wizard prompts with pale defaults or exceed the centered 760-point content limit.
-
-## Workflow Refinement — September 30, 2026
-
-Empty libraries offer their next action; no-result searches offer Clear search. Resumes can open the wizard directly. Unfinished jobs open existing review sheets inside the wizard.
-
-The generation summary shows profile, experience, job, and provider processing location in separate review rows. Drafts remain available across Back and tab navigation. Start over and replacement require confirmation; failed replacement retains the current draft. Return to draft appears before the review fields, and errors appear first on the summary or draft page. Wizard recovery is limited to the current session.
-
-Generated preview, saved structured content, and export use the current edited text. Saved editor export flushes pending changes. Task, job, and resume deletion require confirmation; failed persistence is surfaced. Resume phrase coverage remains advisory.
-
-## Mascot and Progress Widgets — October 9, 2026
-
-- **Mascot:** on Tasks the dog (112 points) sits on the quick capture card's top edge at its trailing side, its lower part over the card, with the speech bubble to its leading side. It never takes taps, and the card's top padding keeps its title and chevron clear of it. Saved Jobs shows the same bubble and dog above its list (hidden while searching): a nudge to save a first job, then how many saved jobs are ready for a resume. With no jobs, the empty state below it keeps only its title and Add job, so the message is not repeated. Moods map to state: curious for first-use guidance, joyful for six seconds after a task is recorded, wink otherwise. Each mood ships as a still image and an animated WebP in `Assets.xcassets/Mascot`. The animation plays twice when the mood appears, then rests on the still; frames decode off the main thread. Reduce Motion or turning off Auto-Play Animated Images shows the still only. The mascot is decorative and hidden from accessibility; the bubble text is read as one element. At accessibility text sizes the dog sits above the bubble, and on Tasks the card follows without overlap.
-- **Speech bubble:** card surface with a divider hairline and a tail pointing at the mascot. Title uses `.headline` in primary ink; the message uses `.subheadline` in secondary ink.
-- **Progress widgets:** a "Your progress" row sits below quick capture. Widgets are small card-surface tiles (12-point radius, no shadow) laid out two per row (a lone widget stays half width), one per row at accessibility sizes, with equal heights within a row. The default pair is Tasks by company (donut chart, top four companies plus Other, with a legend row for every slice) and Used in resumes (percent of tasks linked to a saved resume). Resumes saved, Jobs ready and Last 30 days can be added. Edit opens a full-height native list in edit mode to add, remove and reorder; the layout persists in `tasks.metricWidgets`.
-- **Chart colors:** `CVeeColors.chart1`–`chart4` (teal, purple, ochre, magenta) plus secondary ink for Other. They are data-only and stay clear of coral (actions), green (selection) and object blue (metadata). Each holds at least 4:1 on the card surface in both themes. The Used in resumes bar uses `chart1`.
-- **Coverage is descriptive only.** Widgets count what is stored on the device. They never score a resume or imply hiring outcomes.
-- **Saved Jobs rows** end with a secondary-ink chevron so the whole row reads as tappable, matching Import tasks and Resumes.
-
+- Don't let the mascot take taps, cover text, or carry information that the bubble text does not.

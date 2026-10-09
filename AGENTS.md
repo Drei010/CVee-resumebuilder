@@ -13,13 +13,13 @@ Each fact lives in one file; other files link to it.
 | [README.md](README.md) | What CVee does today: features and the five tabs, AI providers, the resume report, import and generation limits, data and platform, build and test. |
 | [PRODUCT.md](PRODUCT.md) | Purpose, principles (the facts-only rule, privacy and provider choice, accessibility), and non-goals. |
 | [AGENTS.md](AGENTS.md) | This file: documentation map, development guardrails, and verification. |
-| [DESIGN.md](DESIGN.md) | Design tokens and component rules. Its dated sections are due to move to CHANGELOG.md (see ROADMAP.md). |
+| [DESIGN.md](DESIGN.md) | Design tokens and component rules. |
 | [PromptSpec.md](PromptSpec.md) | The prompts CVee sends to AI providers, the generation quality bar, and the AI runtime contract. |
 | [ROADMAP.md](ROADMAP.md) | Now / Next / Later, open questions, and housekeeping. |
 | [CHANGELOG.md](CHANGELOG.md) | Dated history of shipped changes, newest first. |
 | [design-audit/](design-audit/README.md) | Archive of design audits, reviews, and screenshots, indexed in `design-audit/README.md`. Evidence, not current specs. |
 
-Markdown files not listed here are not current references; do not follow or update them. Files scheduled for deletion are listed in ROADMAP.md.
+Markdown files not listed here are not current references; do not follow or update them.
 
 When a fact changes, update the file that owns it and link to it elsewhere instead of repeating it. Record shipped changes in CHANGELOG.md.
 
@@ -32,7 +32,8 @@ When a fact changes, update the file that owns it and link to it elsewhere inste
   - `JobCapture.swift` — job and task capture drafts, job capture limits, document and screenshot extraction, share inbox import, duplicate detection, and URL fetching.
   - `StructuredResume.swift`, `StructuredResumeEditor.swift` — the structured resume document, converter, renderer, LaTeX import, and section editor.
   - `ResumeAnalysis.swift` — phrase coverage, document health, and Apple Intelligence suggestions for the resume report.
-  - `TaskMetrics.swift`, `Mascot.swift` — the Tasks progress widgets and the mascot speech bubble.
+  - `TaskMetrics.swift` — the Tasks progress widgets.
+  - `Mascot.swift` — the dog mascot, its animation, and its speech bubble, used on Tasks (leaning on the quick capture card) and Saved Jobs.
   - `CVeeIntents.swift` — App Shortcuts.
   - `CVee_resumebuilderApp.swift` — app entry, model container, and test launch arguments.
 - `ShareExtension/`, `ShareExtension-Info.plist` — the "Save to CVee" share extension.
@@ -56,7 +57,7 @@ When a fact changes, update the file that owns it and link to it elsewhere inste
 - Run `scripts/test-ios.sh`, which runs both the unit and UI test targets (set `IOS_DEVICE_FAMILY=iPad` for iPad), or run the test targets in Xcode. CI also runs `swiftlint lint --config .swiftlint.yml --strict`; see [README.md](README.md#build-and-test). Exit code 70 means `xcodebuild` could not list simulator destinations (for example, CoreSimulator is unavailable); report that instead of treating it as a test result.
 - Test work-history editing/import, generation availability messaging, AI provider configuration, saved jobs/resumes, clear-all confirmation, and PDF/RTF export with Xcode tests and Simulator checks when applicable.
 - No automated test covers the share extension and inbox import, URL fetching, document and screenshot job import, real AI output from any provider (Apple Intelligence or remote; tests use canned results), real Keychain storage, App Shortcuts, section editor interactions (adding, hiding, reordering, undo), actually clearing all data, or the mascot animation. Check these by hand in the Simulator or on a device when a change touches them.
-- UI tests launch with `-ui-testing`: an in-memory store, cleared UserDefaults (unless `-ui-testing-preserve-drafts`), API keys in UserDefaults, and canned generation and task import results in DEBUG builds. The other fixture and failure arguments are defined in `CVee_resumebuilderApp.swift`, `CVeeCore.swift`, and `ContentView.swift`. Only the canned generation and task import results are limited to DEBUG builds; every other test argument, including `-mock-data` (30 sample tasks) and the `-ui-testing-ai*` enhancement stubs, works in any build.
+- UI tests launch with `-ui-testing`: an in-memory store, cleared UserDefaults (unless `-ui-testing-preserve-drafts`), API keys in UserDefaults, and canned generation and task import results in DEBUG builds. The other fixture and failure arguments are defined in `CVee_resumebuilderApp.swift`, `CVeeCore.swift`, and `ContentView.swift`. Only the canned generation and task import results are limited to DEBUG builds; every other test argument, including `-mock-data` (30 sample tasks) and the `-ui-testing-ai*` enhancement stubs, works in any build. Quick capture starts as a collapsed card, so tests that type into it open it first with the `expandTaskCapture` helper.
 - Use web search for external research and current documentation; do not use Playwright for general web research.
 - Use Playwright only when testing the live website, and capture screenshots of those browser-based test states as artifacts for review.
 - For native-only SwiftUI behavior, use XCUITest and Simulator screenshots rather than Playwright.
