@@ -37,6 +37,15 @@ struct APIKeyStore {
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
+    func containsKey(for provider: AIProvider) -> Bool {
+        if isUITesting { return UserDefaults.standard.string(forKey: testKey(provider)) != nil }
+        // Read metadata without prompting for biometric access to the key itself.
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: provider.rawValue, kSecReturnAttributes as String: true, kSecUseAuthenticationContext as String: context]
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        return status == errSecSuccess || status == errSecInteractionNotAllowed
+    }
     func save(_ key: String, for provider: AIProvider) throws {
         if isUITesting { UserDefaults.standard.set(key, forKey: testKey(provider)); return }
         guard let accessControl = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, .userPresence, nil) else { throw AIProviderError.keychain }
@@ -64,7 +73,7 @@ struct AIProviderSelection {
     func setProvider(_ provider: AIProvider?) { if let provider { UserDefaults.standard.set(provider.rawValue, forKey: "ai.provider") } else { UserDefaults.standard.removeObject(forKey: "ai.provider") } }
     func model(for provider: AIProvider) -> AIModelOption { let id = UserDefaults.standard.string(forKey: "ai.model.\(provider.rawValue)"); return provider.models.first(where: { $0.id == id }) ?? provider.defaultModel }
     func setModel(_ model: AIModelOption, for provider: AIProvider) { UserDefaults.standard.set(model.id, forKey: "ai.model.\(provider.rawValue)") }
-    func hasKey(for provider: AIProvider) -> Bool { keyStore.key(for: provider) != nil }
+    func hasKey(for provider: AIProvider) -> Bool { keyStore.containsKey(for: provider) }
     func clear() { setProvider(nil); AIProvider.allCases.forEach { UserDefaults.standard.removeObject(forKey: "ai.model.\($0.rawValue)") }; keyStore.deleteAll() }
 }
 

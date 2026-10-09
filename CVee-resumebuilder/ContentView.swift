@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 // FIRST VIEWPORT: native large title, company sections, persistent trailing coral add action.
 // FORM: user-pinned Asana reference overrides concept seed 3f85a9cc.
 // FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
-private enum CVeeColors {
+enum CVeeColors {
     static func adaptive(_ light: UInt32, _ dark: UInt32) -> Color {
         Color(uiColor: UIColor { traits in
             let hex = traits.userInterfaceStyle == .dark ? dark : light
@@ -20,19 +20,25 @@ private enum CVeeColors {
         })
     }
     static let coral = adaptive(0xF06A6A, 0xF06A6A)
+    static let actionInk = adaptive(0xB33946, 0xFF9494)
     static let page = adaptive(0xFFFFFF, 0x1E1F21)
     static let card = adaptive(0xF9F8F8, 0x252628)
     static let divider = adaptive(0xEDEBE9, 0x35363A)
     static let ink = adaptive(0x1E1F21, 0xF5F4F2)
     static let buttonInk = adaptive(0x1E1F21, 0x1E1F21)
     static let secondary = adaptive(0x6D6E6F, 0xA9A9AA)
-    static let green = adaptive(0x62D26F, 0x62D26F)
+    static let green = adaptive(0x237A34, 0x62D26F)
     // Darker foregrounds preserve contrast on the reference's soft object tints.
     static let objectInk = adaptive(0x2855A2, 0xA8C5FF)
     static let objectTint = adaptive(0x4573D2, 0x4573D2)
+    // Data-only series for progress charts; each holds at least 4:1 on the card surface.
+    static let chart1 = adaptive(0x0F7C8A, 0x4FC3CF)
+    static let chart2 = adaptive(0x7A4FC9, 0xB79CF0)
+    static let chart3 = adaptive(0xA86A00, 0xF0AE4A)
+    static let chart4 = adaptive(0xB2457F, 0xF08FC0)
 }
 
-private struct CoralButtonStyle: ButtonStyle {
+struct CoralButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     var horizontalPadding: CGFloat = 26
     var verticalPadding: CGFloat = 13
@@ -41,7 +47,7 @@ private struct CoralButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(CVeeColors.buttonInk)
+            .foregroundStyle(isEnabled ? CVeeColors.buttonInk : CVeeColors.ink)
             .padding(.horizontal, horizontalPadding).padding(.vertical, verticalPadding)
             .frame(minHeight: minimumHeight)
             .background(CVeeColors.coral.opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.4),
@@ -49,7 +55,7 @@ private struct CoralButtonStyle: ButtonStyle {
     }
 }
 
-private struct WorkspaceSurface: ViewModifier {
+struct WorkspaceSurface: ViewModifier {
     func body(content: Content) -> some View {
         content.frame(maxWidth: 760)
             .frame(maxWidth: .infinity)
@@ -101,17 +107,17 @@ struct ContentView: View {
                 .tabItem { Label("Saved Jobs", systemImage: "bookmark") }
                 .accessibilityIdentifier("tab.saved-jobs")
                 .tag(1)
-            NavigationStack { NewResumeView(onSaved: { selectedTab = 3 }) }
+            NavigationStack { NewResumeView(onSaved: { selectedTab = 3 }, onOpenTasks: { selectedTab = 0 }) }
                 .tabItem { Label("Resume Wizard", systemImage: "wand.and.stars") }
                 .tag(2)
-            NavigationStack { ResumesView() }
+            NavigationStack { ResumesView(onCreateResume: { selectedTab = 2 }) }
                 .tabItem { Label("Resumes", systemImage: "doc.text") }
                 .tag(3)
             NavigationStack { ProfileView() }
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
                 .tag(4)
         }
-        .tint(CVeeColors.coral)
+        .tint(CVeeColors.actionInk)
         .foregroundStyle(CVeeColors.ink)
         .scrollContentBackground(.hidden)
         .background(CVeeColors.page)
@@ -128,7 +134,7 @@ struct ContentView: View {
 
 struct ProfileView: View {
     @Environment(\.modelContext) private var modelContext
-    @AppStorage("profile.name") private var name = "Andrei Hidalgo"
+    @AppStorage("profile.name") private var name = ""
     @AppStorage("profile.email") private var email = ""
     @AppStorage("profile.phone") private var phone = ""
     @AppStorage("profile.location") private var location = ""
@@ -140,6 +146,7 @@ struct ProfileView: View {
     @State private var showingEdit = false
     @State private var showingClearPrompt = false
     @State private var showingSavedMessage = false
+    @State private var clearError: String?
 
     var body: some View {
         Form {
@@ -183,24 +190,36 @@ struct ProfileView: View {
         .sheet(isPresented: $showingEdit) {
             ProfileEditView(name: $name, email: $email, phone: $phone, location: $location, linkedin: $linkedin, github: $github, education: $education, skills: $skills, certifications: $certifications) { showingSavedMessage = true }
         }
-        .sheet(isPresented: $showingClearPrompt) { ClearAllDataView { clearAllData(); showingClearPrompt = false } }
+        .sheet(isPresented: $showingClearPrompt) { ClearAllDataView { clearAllData() } }
+        .alert("Couldn’t clear data", isPresented: Binding(get: { clearError != nil }, set: { if !$0 { clearError = nil } })) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(clearError ?? "Try again.") }
         .alert("Personal info updated", isPresented: $showingSavedMessage) {
             Button("OK", role: .cancel) { }
         }
     }
 
     private func clearAllData() {
-        (try? modelContext.fetch(FetchDescriptor<WorkExperience>()))?.forEach(modelContext.delete)
-        (try? modelContext.fetch(FetchDescriptor<JobTarget>()))?.forEach(modelContext.delete)
-        (try? modelContext.fetch(FetchDescriptor<ResumeSection>()))?.forEach(modelContext.delete)
-        (try? modelContext.fetch(FetchDescriptor<Resume>()))?.forEach(modelContext.delete)
-        try? modelContext.save()
+        do {
+            try modelContext.fetch(FetchDescriptor<WorkExperience>()).forEach(modelContext.delete)
+            try modelContext.fetch(FetchDescriptor<JobTarget>()).forEach(modelContext.delete)
+            try modelContext.fetch(FetchDescriptor<ResumeSection>()).forEach(modelContext.delete)
+            try modelContext.fetch(FetchDescriptor<Resume>()).forEach(modelContext.delete)
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            showingClearPrompt = false
+            clearError = error.localizedDescription
+            return
+        }
+        showingClearPrompt = false
         JobCaptureStore().removeAll()
         JobCaptureDraftStore.clear()
         TaskCaptureDraftStore.clear()
-        name = "Andrei Hidalgo"; email = ""; phone = ""; location = ""; linkedin = ""; github = ""; education = ""; skills = ""; certifications = ""
+        name = ""; email = ""; phone = ""; location = ""; linkedin = ""; github = ""; education = ""; skills = ""; certifications = ""
         UserDefaults.standard.removeObject(forKey: "tasks.lastCompany")
         AIProviderSelection().clear()
+        NotificationCenter.default.post(name: Notification.Name("cveeDidClearData"), object: nil)
     }
 }
 
@@ -236,6 +255,7 @@ struct AIProviderView: View {
                 .onChange(of: provider) { _, newProvider in
                     selection.setProvider(newProvider)
                     modelID = selection.model(for: newProvider).id
+                    hasSavedKey = selection.hasKey(for: newProvider)
                 }
             }
             Section("Model") {
@@ -298,6 +318,7 @@ struct AIProviderKeyView: View {
     let onSaved: () -> Void
     private let selection = AIProviderSelection()
     @State private var keyDraft = ""
+    @FocusState private var isKeyFocused: Bool
     @State private var showingDeletePrompt = false
     @State private var message: String?
 
@@ -317,7 +338,9 @@ struct AIProviderKeyView: View {
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(CVeeColors.green)
                     }
+                    Text("API key").font(.subheadline.weight(.medium))
                     SecureField(hasKey ? "Replace saved API key" : "Paste API key", text: $keyDraft)
+                        .focused($isKeyFocused).submitLabel(.done).onSubmit { isKeyFocused = false }
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .textContentType(.password)
@@ -339,6 +362,7 @@ struct AIProviderKeyView: View {
             .navigationTitle(hasKey ? "Edit API key" : "Add API key")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { isKeyFocused = false } }
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
             .confirmationDialog("Delete this API key?", isPresented: $showingDeletePrompt, titleVisibility: .visible) {
@@ -440,6 +464,7 @@ struct ProfileEditView: View {
     @Binding var certifications: String
     let onSave: () -> Void
     @State private var draft: Draft
+    @FocusState private var focusedProfileField: String?
 
     private struct Draft {
         var name, email, phone, location, linkedin, github, education, skills, certifications: String
@@ -463,15 +488,51 @@ struct ProfileEditView: View {
         NavigationStack {
             Form {
                 Section("Personal information") {
-                    TextField("Full name", text: $draft.name).textContentType(.name)
-                    TextField("Email", text: $draft.email).textContentType(.emailAddress).keyboardType(.emailAddress)
-                    TextField("Phone", text: $draft.phone).textContentType(.telephoneNumber).keyboardType(.phonePad)
-                    TextField("Location", text: $draft.location)
-                    TextField("LinkedIn URL", text: $draft.linkedin).textInputAutocapitalization(.never).keyboardType(.URL)
-                    TextField("GitHub URL", text: $draft.github).textInputAutocapitalization(.never).keyboardType(.URL)
-                    TextField("Education", text: $draft.education)
-                    TextField("Skills & abilities", text: $draft.skills, axis: .vertical).lineLimit(3...6)
-                    TextField("Certifications", text: $draft.certifications, axis: .vertical).lineLimit(3...6)
+                    LabeledContent("Full name") {
+                        TextField("Full name", text: $draft.name).textContentType(.name)
+                            .focused($focusedProfileField, equals: "name")
+                            .submitLabel(.next).onSubmit { focusedProfileField = "email" }
+                    }
+                    LabeledContent("Email") {
+                        TextField("Email", text: $draft.email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .focused($focusedProfileField, equals: "email")
+                            .submitLabel(.next).onSubmit { focusedProfileField = "phone" }
+                    }
+                    LabeledContent("Phone") {
+                        TextField("Phone", text: $draft.phone).textContentType(.telephoneNumber).keyboardType(.phonePad)
+                            .focused($focusedProfileField, equals: "phone")
+                            .submitLabel(.next).onSubmit { focusedProfileField = "location" }
+                    }
+                    LabeledContent("Location") {
+                        TextField("Location", text: $draft.location).textContentType(.addressCity)
+                            .focused($focusedProfileField, equals: "location")
+                            .submitLabel(.next).onSubmit { focusedProfileField = "linkedin" }
+                    }
+                    LabeledContent("LinkedIn URL") {
+                        TextField("LinkedIn URL", text: $draft.linkedin).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                            .focused($focusedProfileField, equals: "linkedin")
+                            .submitLabel(.next).onSubmit { focusedProfileField = "github" }
+                    }
+                    LabeledContent("GitHub URL") {
+                        TextField("GitHub URL", text: $draft.github).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                            .focused($focusedProfileField, equals: "github")
+                            .submitLabel(.next).onSubmit { focusedProfileField = "education" }
+                    }
+                    LabeledContent("Education") {
+                        TextField("Education", text: $draft.education)
+                            .focused($focusedProfileField, equals: "education")
+                            .submitLabel(.next).onSubmit { focusedProfileField = "skills" }
+                    }
+                    LabeledContent("Skills & abilities") {
+                        TextField("Skills & abilities", text: $draft.skills)
+                            .focused($focusedProfileField, equals: "skills")
+                            .submitLabel(.next).onSubmit { focusedProfileField = "certifications" }
+                    }
+                    LabeledContent("Certifications") {
+                        TextField("Certifications", text: $draft.certifications)
+                            .focused($focusedProfileField, equals: "certifications")
+                            .submitLabel(.done).onSubmit { focusedProfileField = nil }
+                    }
                 }
                 Section {
                     if !invalidURLFields.isEmpty {
@@ -492,7 +553,10 @@ struct ProfileEditView: View {
             .modifier(WorkspaceSurface())
             .navigationTitle("Update personal info")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { focusedProfileField = nil } }
+            }
         }
     }
 }
@@ -623,7 +687,11 @@ struct WorkHistoryView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \WorkExperience.startDate, order: .reverse) private var experiences: [WorkExperience]
+    @Query private var resumes: [Resume]
+    @Query private var jobs: [JobTarget]
     @State private var selected: WorkExperience?
+    @State private var pendingDelete: WorkExperience?
+    @State private var deleteError: String?
     @State private var showingAddTask = false
     @State private var showingImport = false
     @State private var searchText = ""
@@ -642,6 +710,7 @@ struct WorkHistoryView: View {
     @State private var showingDiscardDraftAlert = false
     @State private var hasEditedCapture = false
     @State private var recordSheetDetent: PresentationDetent = .medium
+    @State private var celebrationID: UUID?
     @FocusState private var focusedCaptureField: CaptureField?
     @FocusState private var focusedRecordField: RecordField?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -679,6 +748,30 @@ struct WorkHistoryView: View {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedCompany != "All companies"
     }
 
+    private var metricsSnapshot: TaskMetricsSnapshot {
+        TaskMetricsSnapshot(experiences: experiences, resumes: resumes, jobs: jobs)
+    }
+
+    /// The mascot's line changes with the library: first-use guidance, a cheer right after
+    /// recording, and a short reminder of what is ready to reuse.
+    private var mascotGreeting: (mood: MascotMood, title: String, message: String, id: String) {
+        let count = experiences.count
+        let tasksPhrase = "\(count) \(count == 1 ? "task" : "tasks")"
+        if count == 0 {
+            return (.curious, "Turn your work into reusable achievements",
+                    "Record one task or achievement below. Reuse it when tailoring a resume to a job.",
+                    "tasks.first-use-guidance")
+        }
+        if celebrationID != nil {
+            return (.joyful, "Nice, that one’s saved!",
+                    "You now have \(tasksPhrase) ready to reuse in your next resume.",
+                    "tasks.mascot")
+        }
+        return (.wink, "\(tasksPhrase) ready to reuse",
+                "Add today’s win below, then pick the best ones when you tailor a resume.",
+                "tasks.mascot")
+    }
+
     private var taskResultLabel: String {
         let count = filteredExperiences.count
         return "\(count) \(count == 1 ? "task" : "tasks")"
@@ -714,6 +807,7 @@ struct WorkHistoryView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear task search")
+                    .frame(minWidth: 44, minHeight: 44)
                     .accessibilityIdentifier("tasks.search.clear")
                 }
                 Menu {
@@ -723,10 +817,11 @@ struct WorkHistoryView: View {
                     }
                 } label: {
                     Image(systemName: "line.3.horizontal.decrease.circle")
-                        .foregroundStyle(selectedCompany == "All companies" ? CVeeColors.secondary : CVeeColors.coral)
+                        .foregroundStyle(selectedCompany == "All companies" ? CVeeColors.secondary : CVeeColors.actionInk)
                 }
                 .accessibilityLabel("Filter tasks by company")
                 .accessibilityValue(selectedCompany)
+                .frame(minWidth: 44, minHeight: 44)
                 .accessibilityIdentifier("tasks.filter")
             }
 
@@ -750,6 +845,7 @@ struct WorkHistoryView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Remove company filter")
                     .accessibilityValue(selectedCompany)
+                    .frame(minHeight: 44)
                     .accessibilityIdentifier("tasks.active-company-filter")
                 }
                 Spacer(minLength: 0)
@@ -765,8 +861,20 @@ struct WorkHistoryView: View {
 
     var body: some View {
         List {
+            let greeting = mascotGreeting
+            MascotSpeechBubble(mood: greeting.mood, title: greeting.title, message: greeting.message, accessibilityID: greeting.id)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 0, trailing: 12))
+                .listRowBackground(CVeeColors.page)
+                .listRowSeparator(.hidden)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: greeting.mood)
+
             taskCaptureCard
                 .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                .listRowBackground(CVeeColors.page)
+                .listRowSeparator(.hidden)
+
+            TaskMetricsSection(snapshot: metricsSnapshot)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 12, trailing: 16))
                 .listRowBackground(CVeeColors.page)
                 .listRowSeparator(.hidden)
 
@@ -836,7 +944,7 @@ struct WorkHistoryView: View {
                                 .listRowSeparatorTint(CVeeColors.divider)
                                 .accessibilityLabel("\(experience.tasks.first ?? "No task details yet"). \(experience.jobTitle). \(experience.dateRange)")
                                 .accessibilityHint("Opens this work experience for editing")
-                                .swipeActions { Button("Delete", role: .destructive) { modelContext.delete(experience) } }
+                                .swipeActions { Button("Delete", role: .destructive) { pendingDelete = experience } }
                             }
                         }
                     } header: {
@@ -872,9 +980,24 @@ struct WorkHistoryView: View {
         .navigationTitle("Tasks")
         .scrollContentBackground(.hidden)
         .background(CVeeColors.page)
-        .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { _, offset in
+        .alert("Delete task?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
+            Button("Delete task", role: .destructive) {
+                guard let pendingDelete else { return }
+                modelContext.delete(pendingDelete)
+                do { try modelContext.save() }
+                catch { modelContext.rollback(); deleteError = error.localizedDescription }
+                self.pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: { Text("This removes the task from your work library. Saved resume content is retained.") }
+        .alert("Couldn’t delete task", isPresented: Binding(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(deleteError ?? "Try again.") }
+        .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y + $0.contentInsets.top }) { _, offset in
             guard focusedCaptureField == nil else { return }
-            let shouldCollapse = offset > 32
+            // Expand only back at the top: collapsing shortens a short list enough to clamp the
+            // offset below the collapse threshold, which would otherwise bounce the card open again.
+            let shouldCollapse = cardIsCollapsed ? offset > 1 : offset > 32
             guard shouldCollapse != cardIsCollapsed else { return }
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                 cardIsCollapsed = shouldCollapse
@@ -886,6 +1009,12 @@ struct WorkHistoryView: View {
             }
         }
         .task { restoreCardOrSeed() }
+        .task(id: celebrationID) {
+            // Leaving the tab cancels the sleep; the cheer still ends unless a newer one started.
+            guard let id = celebrationID else { return }
+            try? await Task.sleep(for: .seconds(6))
+            if celebrationID == id { celebrationID = nil }
+        }
         .onChange(of: experiences.count) { _, _ in restoreCardOrSeed() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -1022,6 +1151,8 @@ struct WorkHistoryView: View {
                         }
                     } label: {
                         Label(cardCompany.isEmpty ? "Choose company" : cardCompany, systemImage: "building.2")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel("Task company")
                     .accessibilityValue(cardCompany.isEmpty ? "Choose company" : cardCompany)
@@ -1165,6 +1296,7 @@ struct WorkHistoryView: View {
             hasEditedCapture = false
             TaskCaptureDraftStore.clear()
             showingRecordConfirmation = false
+            celebrationID = UUID()
         } catch {
             modelContext.delete(experience)
             recordError = error.localizedDescription
@@ -1259,7 +1391,7 @@ struct TaskDetailView: View {
                     } else {
                         Button("Edit") { isEditing = true }
                             .frame(maxWidth: .infinity)
-                            .tint(CVeeColors.coral)
+                            .tint(CVeeColors.actionInk)
                             .accessibilityIdentifier("task.edit")
                         Button("Delete", role: .destructive) { showingDeleteAlert = true }
                             .frame(maxWidth: .infinity)
@@ -1287,7 +1419,7 @@ struct TaskDetailView: View {
                 Button("Delete", role: .destructive) {
                     modelContext.delete(experience)
                     do { try modelContext.save(); dismiss() }
-                    catch { saveError = error.localizedDescription }
+                    catch { modelContext.rollback(); saveError = error.localizedDescription }
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
@@ -1313,6 +1445,7 @@ struct SavedJobsView: View {
     @State private var searchText = ""
     @State private var showingAddJob = false
     @State private var selectedJob: JobTarget?
+    @State private var pendingDeletion: [JobTarget] = []
     @State private var saveError: String?
     let onOpenTasks: () -> Void
 
@@ -1334,7 +1467,14 @@ struct SavedJobsView: View {
     var body: some View {
         List {
             if filteredJobs.isEmpty {
-                ContentUnavailableView("No saved jobs", systemImage: "bookmark", description: Text("Add a job description to tailor your next resume."))
+                ContentUnavailableView {
+                    Label(jobs.isEmpty ? "No saved jobs" : "No matching jobs", systemImage: "bookmark")
+                } description: {
+                    Text(jobs.isEmpty ? "Add a job description to tailor your next resume." : "Try another search to find your saved jobs.")
+                } actions: {
+                    if jobs.isEmpty { Button("Add job") { showingAddJob = true }.buttonStyle(CoralButtonStyle()) }
+                    else { Button("Clear search") { searchText = "" } }
+                }
             }
             let captured = filteredJobs.filter { $0.captureID != nil }
             let saved = filteredJobs.filter { $0.captureID == nil }
@@ -1364,6 +1504,10 @@ struct SavedJobsView: View {
                     .accessibilityLabel("Add saved job")
             }
         }
+        .alert("Delete saved job?", isPresented: Binding(get: { !pendingDeletion.isEmpty }, set: { if !$0 { pendingDeletion = [] } })) {
+            Button("Delete job", role: .destructive) { deleteConfirmedJobs() }
+            Button("Cancel", role: .cancel) { pendingDeletion = [] }
+        } message: { Text("The job and its attachments will be removed. Saved resume content is retained.") }
         .sheet(isPresented: $showingAddJob) { AddJobView() }
         .sheet(item: $selectedJob) { job in JobDetailView(job: job, onOpenTasks: onOpenTasks) }
         .onReceive(NotificationCenter.default.publisher(for: .cveeOpenJob)) { note in
@@ -1383,15 +1527,22 @@ struct SavedJobsView: View {
     @ViewBuilder
     private func jobRow(_ job: JobTarget) -> some View {
         Button { selectedJob = job } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(job.displayTitle).font(.headline)
-                MetadataPill(text: job.displayCompany)
-                Text(jobStatus(for: job))
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(job.isUsableForResume ? CVeeColors.green : CVeeColors.secondary)
-                Text(job.createdAt, style: .date).font(.caption).foregroundStyle(CVeeColors.secondary)
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(job.displayTitle).font(.headline)
+                    MetadataPill(text: job.displayCompany)
+                    Text(jobStatus(for: job))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(job.isUsableForResume ? CVeeColors.green : CVeeColors.secondary)
+                    Text(job.createdAt, style: .date).font(.caption).foregroundStyle(CVeeColors.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(CVeeColors.secondary)
+                    .accessibilityHidden(true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.vertical, 6)
@@ -1401,12 +1552,19 @@ struct SavedJobsView: View {
     }
 
     private func delete(_ offsets: IndexSet, from source: [JobTarget]) {
-        offsets.map { source[$0] }.forEach {
-            JobCaptureStore().removeAttachments(for: $0)
-            modelContext.delete($0)
-        }
-        do { try modelContext.save() } catch { saveError = error.localizedDescription }
+        pendingDeletion = offsets.map { source[$0] }
     }
+
+    private func deleteConfirmedJobs() {
+        let deleted = pendingDeletion
+        deleted.forEach(modelContext.delete)
+        do {
+            try modelContext.save()
+            deleted.forEach { JobCaptureStore().removeAttachments(for: $0) }
+        } catch { modelContext.rollback(); saveError = error.localizedDescription }
+        pendingDeletion = []
+    }
+
 }
 
 struct JobDetailView: View {
@@ -1551,10 +1709,9 @@ struct JobDetailView: View {
             }
             .alert("Confirm delete", isPresented: $showingDeleteAlert) {
                 Button("Delete", role: .destructive) {
-                    JobCaptureStore().removeAttachments(for: job)
                     modelContext.delete(job)
-                    do { try modelContext.save(); dismiss() }
-                    catch { saveError = error.localizedDescription }
+                    do { try modelContext.save(); JobCaptureStore().removeAttachments(for: job); dismiss() }
+                    catch { modelContext.rollback(); saveError = error.localizedDescription }
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
@@ -1919,11 +2076,12 @@ private enum ResumeStartMode: String, CaseIterable {
 
 struct NewResumeView: View {
     let onSaved: () -> Void
+    let onOpenTasks: () -> Void
     @Environment(\.modelContext) private var modelContext
     @Query private var experiences: [WorkExperience]
     @Query(sort: \JobTarget.createdAt, order: .reverse) private var jobs: [JobTarget]
     @Query(sort: \Resume.updatedAt, order: .reverse) private var resumes: [Resume]
-    @AppStorage("profile.name") private var profileName = "Andrei Hidalgo"
+    @AppStorage("profile.name") private var profileName = ""
     @AppStorage("profile.email") private var profileEmail = ""
     @AppStorage("profile.phone") private var profilePhone = ""
     @AppStorage("profile.location") private var profileLocation = ""
@@ -1959,19 +2117,34 @@ struct NewResumeView: View {
     @State private var errorMessage: String?
     @State private var generatedDraft: ResumeDraft?
     @State private var generatedText = ""
+    @State private var generatedPDFData = Data()
     @State private var generatedLaTeX = ""
     @State private var generatedEditorMode = EditorMode.formatted
     @State private var isEditingGenerated = false
     @State private var isSaved = false
     @State private var showingAnalysis = false
     @State private var showingOptionalProfile = false
+    @Environment(\.dynamicTypeSize) private var wizardTypeSize
+    @State private var didLoadProfile = false
+    @State private var reviewingJob: JobTarget?
+    @State private var showingProvider = false
+    @State private var providerStatus = ""
+    @State private var selectedProvider: AIProvider?
+    @State private var providerReady = false
+    @State private var pendingResumeWasSaved = false
+    @State private var showingReplaceDraft = false
+    @State private var showingStartOver = false
+    @State private var generatedInputSignature = ""
+    @State private var generatedJob: JobTarget?
+    @State private var generatedExperienceIDs: [UUID] = []
+    @State private var pendingResume: Resume?
+    @State private var didSimulateSaveFailure = false
     @FocusState private var focusedField: WizardField?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum EditorMode: String, CaseIterable, Hashable { case formatted = "Formatted", latex = "LaTeX" }
-    private enum WizardField: Hashable { case name, email, phone, location, linkedin, github, education, skills, certifications }
+    private enum WizardField: Hashable { case name, email, phone, location, linkedin, github, education, skills, certifications, generated }
 
-    init(onSaved: @escaping () -> Void = {}) { self.onSaved = onSaved }
+    init(onSaved: @escaping () -> Void = {}, onOpenTasks: @escaping () -> Void = {}) { self.onSaved = onSaved; self.onOpenTasks = onOpenTasks }
 
     private var selectedExperiences: [WorkExperience] { experiences.filter { selectedExperienceIDs.contains($0.id) } }
     private var selectedJob: JobTarget? { jobs.first { $0.id == selectedJobID } }
@@ -1985,9 +2158,9 @@ struct NewResumeView: View {
     private var canAdvance: Bool {
         switch step {
         case .start: return startMode == .existing ? !baselineText.isEmpty : profileIsValid
-        case .workLibrary: return !selectedExperienceIDs.isEmpty
+        case .workLibrary: return !selectedExperiences.isEmpty
         case .jobDescription: return selectedJob?.isUsableForResume == true
-        case .summary: return !isLoading
+        case .summary: return (providerReady || ProcessInfo.processInfo.arguments.contains("-resume-format-fixture")) && !isLoading && selectedJob?.isUsableForResume == true && !selectedExperiences.isEmpty && (startMode == .existing ? !baselineText.isEmpty : profileIsValid)
         case .generated: return generatedDraft != nil
         }
     }
@@ -2004,20 +2177,54 @@ struct NewResumeView: View {
                 case .generated: generatedPage
                 }
             }
+            .id(step)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .transition(reduceMotion ? .opacity : .move(edge: step.rawValue > 0 ? .trailing : .leading).combined(with: .opacity))
-            navigationBar
+            .disabled(isLoading)
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) { navigationBar }
         .navigationTitle("Resume Wizard")
+        .navigationBarTitleDisplayMode(wizardTypeSize.isAccessibilitySize ? .inline : .large)
         .background(CVeeColors.page)
-        .onAppear { loadProfileDraft() }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("cveeDidClearData"))) { _ in pendingResume = nil; resetWizard() }
+        .onAppear { if !didLoadProfile { loadProfileDraft(); didLoadProfile = true }; refreshProviderStatus() }
         .onChange(of: startMode) { _, mode in if mode == .fresh { baselineText = ""; selectedResumeID = nil } }
         .onChange(of: experiences.count) { _, count in if count > taskCountBeforeAdd, let newest = experiences.max(by: { $0.createdAt < $1.createdAt }) { selectedExperienceIDs.insert(newest.id) } }
-        .onChange(of: jobs.count) { _, count in if count > jobCountBeforeAdd, let newest = jobs.first(where: { $0.isUsableForResume }) { selectedJobID = newest.id } }
+        .onChange(of: jobs.count) { _, count in if count > jobCountBeforeAdd, let newest = jobs.first, newest.isUsableForResume { selectedJobID = newest.id } }
         .sheet(isPresented: $showingAddTask) { WorkExperienceEditor(experience: WorkExperience(jobTitle: "", company: "")) }
         .sheet(isPresented: $showingImport) { TaskImportView { ids in selectedExperienceIDs.formUnion(ids) } }
         .sheet(isPresented: $showingAddJob) { AddJobView() }
         .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: [.pdf]) { result in importPDF(result) }
+        .sheet(item: $reviewingJob, onDismiss: {
+            if let id = selectedJobID, !jobs.contains(where: { $0.id == id && $0.isUsableForResume }) { selectedJobID = nil }
+        }) { job in JobDetailView(job: job, onOpenTasks: onOpenTasks) }
+        .sheet(isPresented: $showingProvider, onDismiss: refreshProviderStatus) {
+            NavigationStack {
+                AIProviderView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showingProvider = false } } }
+            }
+        }
+        .alert("Replace unsaved draft?", isPresented: $showingReplaceDraft) {
+            Button("Generate replacement") { Task { await generate() } }.accessibilityIdentifier("wizard.confirm-replacement")
+            Button("Keep draft", role: .cancel) { }
+        } message: { Text("Your current draft stays available until the replacement is generated successfully.") }
+        .alert("Start a new resume?", isPresented: $showingStartOver) {
+            Button("Start over", role: .destructive) { resetWizard() }
+            Button("Keep working", role: .cancel) { }
+        } message: { Text("This discards the current wizard session. Saved resumes are retained.") }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Start over") { showingStartOver = true }.disabled(isLoading).accessibilityIdentifier("wizard.start-over")
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                if focusedField != nil {
+                    Button { focusedField = nil } label: { Image(systemName: "keyboard.chevron.compact.down") }
+                        .accessibilityLabel("Hide keyboard")
+                        .accessibilityIdentifier("wizard.hide-keyboard")
+                }
+            }
+        }
+        .onChange(of: errorMessage) { _, message in
+            if let message { UIAccessibility.post(notification: .announcement, argument: message) }
+        }
     }
 
     private var progressHeader: some View {
@@ -2034,14 +2241,17 @@ struct NewResumeView: View {
                         .frame(height: 2)
                 }
             }
-            Text(step.guidance)
-                .font(.caption)
-                .foregroundStyle(CVeeColors.secondary)
+            if focusedField == nil {
+                Text(step.guidance)
+                    .font(.caption)
+                    .foregroundStyle(CVeeColors.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.horizontal, 18).padding(.vertical, 12)
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("wizard.progress")
-        .accessibilityLabel("Step \(step.rawValue + 1) of \(ResumeWizardStep.allCases.count): \(step.title)")
+        .accessibilityLabel("Step \(step.rawValue + 1) of \(ResumeWizardStep.allCases.count): \(step.title). \(step.guidance)")
     }
 
     private var startPage: some View {
@@ -2049,10 +2259,11 @@ struct NewResumeView: View {
             Section { Picker("Start method", selection: $startMode) { ForEach(ResumeStartMode.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented) }
             if startMode == .fresh {
                 Section("Your identity") {
-                    Text("Required fields are marked. You can add the rest when ready.").font(.caption).foregroundStyle(CVeeColors.secondary)
-                    LabeledContent { TextField("Full name", text: $draftName).focused($focusedField, equals: .name).textContentType(.name).accessibilityIdentifier("wizard.full-name") } label: { Text("Full name").fontWeight(.medium) }
-                    LabeledContent { TextField("Email", text: $draftEmail).focused($focusedField, equals: .email).textContentType(.emailAddress).keyboardType(.emailAddress).accessibilityIdentifier("wizard.email") } label: { Text("Email").fontWeight(.medium) }
-                    if !profileIsValid { Text("Add your full name and email to continue.").font(.caption).foregroundStyle(.orange).accessibilityIdentifier("wizard.profile-validation") }
+                    Text("Full name and email are required. Add optional details when ready.").font(.caption).foregroundStyle(CVeeColors.secondary)
+                    LabeledContent { TextField("Full name", text: $draftName).focused($focusedField, equals: .name).textContentType(.name).submitLabel(.next).onSubmit { focusedField = .email }.accessibilityIdentifier("wizard.full-name") } label: { Text("Full name (required)").fontWeight(.medium) }
+                    LabeledContent { TextField("Email", text: $draftEmail).focused($focusedField, equals: .email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.done).onSubmit { focusedField = nil }.accessibilityIdentifier("wizard.email") } label: { Text("Email (required)").fontWeight(.medium) }
+                    if draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Text("Enter your full name.").font(.caption).foregroundStyle(CVeeColors.secondary) }
+                    if draftEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Text("Enter your email to continue.").font(.caption).foregroundStyle(CVeeColors.secondary).accessibilityIdentifier("wizard.profile-validation") }
                     DisclosureGroup("Optional details", isExpanded: $showingOptionalProfile) {
                         LabeledContent("Phone") { TextField("Phone", text: $draftPhone).focused($focusedField, equals: .phone).textContentType(.telephoneNumber).keyboardType(.phonePad) }
                         LabeledContent("Location") { TextField("Location", text: $draftLocation).focused($focusedField, equals: .location) }
@@ -2066,8 +2277,9 @@ struct NewResumeView: View {
             } else {
                 Section("Resume baseline") {
                     Button("Upload PDF") { showingFileImporter = true }
-                    if !resumes.isEmpty { ForEach(resumes) { resume in Button { selectedResumeID = resume.id; baselineText = resume.sections.sorted(by: { $0.order < $1.order }).map { $0.attributedText.string }.joined(separator: "\n") } label: { Label(resume.name, systemImage: selectedResumeID == resume.id ? "checkmark.circle.fill" : "doc.text") } } }
+                    if !resumes.isEmpty { ForEach(resumes) { resume in Button { do { let document = try ResumeDocumentConverter.document(for: resume); baselineText = ResumeDocumentRenderer().attributedText(for: document).string; selectedResumeID = resume.id } catch { errorMessage = error.localizedDescription } } label: { Label(resume.name, systemImage: selectedResumeID == resume.id ? "checkmark.circle.fill" : "doc.text") } } }
                     if !baselineText.isEmpty { Text("Baseline ready").font(.caption).foregroundStyle(.secondary) }
+                    if let errorMessage { Text(errorMessage).foregroundStyle(CVeeColors.ink).accessibilityIdentifier("wizard.baseline-error") }
                 }
             }
         }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.start")
@@ -2076,20 +2288,27 @@ struct NewResumeView: View {
     private var workLibraryPage: some View {
         Form {
             Section {
-                HStack {
+                VStack(alignment: .leading, spacing: 8) {
                     Text("\(selectedExperiences.count) selected")
-                    Spacer()
-                    Button("Select All") { selectAllExperiences() }
+                    Button("Select all experience") { selectAllExperiences() }
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("wizard.select-all")
-                    Button("Clear") { clearSelectedExperiences() }
+                    Button("Clear selection") { clearSelectedExperiences() }
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("wizard.clear-selection")
                 }
             }
             Section("Work Library") {
-                if filteredExperiences.isEmpty { ContentUnavailableView("No matching tasks", systemImage: "checklist") }
-                ForEach(filteredExperiences) { experience in Button { toggleExperience(experience.id) } label: { HStack { VStack(alignment: .leading) { Text(experience.jobTitle).font(.subheadline.weight(.medium)); MetadataPill(text: experience.company).foregroundStyle(.secondary); Text(experience.tasks.first ?? "No task details").font(.caption).foregroundStyle(.secondary).lineLimit(2) }; Spacer(); SelectionCircle(isSelected: selectedExperienceIDs.contains(experience.id)) } }.buttonStyle(.plain).accessibilityValue(selectedExperienceIDs.contains(experience.id) ? "Selected" : "Not selected") }
+                if filteredExperiences.isEmpty {
+                    ContentUnavailableView {
+                        Label(experiences.isEmpty ? "Add your experience" : "No matching experience", systemImage: "checklist")
+                    } description: { Text(experiences.isEmpty ? "Add a task or achievement to use in your resume." : "Try a different search.") }
+                    actions: {
+                        if experiences.isEmpty { Button("Add experience") { taskCountBeforeAdd = experiences.count; showingAddTask = true } }
+                        else { Button("Clear search") { taskSearch = "" } }
+                    }
+                }
+                ForEach(filteredExperiences) { experience in Button { toggleExperience(experience.id) } label: { HStack { VStack(alignment: .leading) { Text(experience.tasks.first ?? "No task details").font(.subheadline.weight(.medium)).lineLimit(3); Text(experience.jobTitle).font(.caption).foregroundStyle(CVeeColors.secondary); MetadataPill(text: experience.company) }; Spacer(); SelectionCircle(isSelected: selectedExperienceIDs.contains(experience.id)) } }.buttonStyle(.plain).accessibilityValue(selectedExperienceIDs.contains(experience.id) ? "Selected" : "Not selected") }
                 Menu { Button("Add manually") { taskCountBeforeAdd = experiences.count; showingAddTask = true }; Button("Import Tasks List") { showingImport = true } } label: { Label("Add task", systemImage: "plus") }
             }
         }.formStyle(.grouped).modifier(WorkspaceSurface()).searchable(text: $taskSearch, prompt: "Search experience").accessibilityIdentifier("wizard.work-library")
@@ -2098,9 +2317,17 @@ struct NewResumeView: View {
     private var jobDescriptionPage: some View {
         Form {
             Section("Job descriptions") {
-                if filteredJobs.isEmpty { ContentUnavailableView("No saved jobs", systemImage: "briefcase", description: Text("Add a job description to continue.")) }
+                if filteredJobs.isEmpty {
+                    ContentUnavailableView {
+                        Label(jobs.isEmpty ? "No saved jobs" : "No matching jobs", systemImage: "briefcase")
+                    } description: { Text(jobs.isEmpty ? "Add a job description to continue." : "Try a different search.") }
+                    actions: {
+                        if jobs.isEmpty { Button("Add job") { jobCountBeforeAdd = jobs.count; showingAddJob = true } }
+                        else { Button("Clear search") { jobSearch = "" } }
+                    }
+                }
                 ForEach(filteredJobs) { job in
-                    Button { if job.isUsableForResume { selectedJobID = job.id } } label: {
+                    Button { if job.isUsableForResume { selectedJobID = job.id } else { reviewingJob = job } } label: {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(job.displayTitle).font(.headline)
@@ -2114,7 +2341,8 @@ struct NewResumeView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .disabled(!job.isUsableForResume)
+                    .accessibilityHint(job.isUsableForResume ? "Selects this target job" : "Opens job details to complete and review the description")
+                    .accessibilityIdentifier("wizard.job.\(job.id.uuidString)")
                     .accessibilityValue(selectedJobID == job.id ? "Selected" : job.isUsableForResume ? "Available" : "Unavailable")
                 }
                 Button { jobCountBeforeAdd = jobs.count; showingAddJob = true } label: { Label("Add job", systemImage: "plus") }
@@ -2124,29 +2352,39 @@ struct NewResumeView: View {
 
     private var summaryPage: some View {
         Form {
-            Section("Ready to generate") {
-                LabeledContent("Profile", value: startMode == .fresh ? draftName : "Existing resume baseline")
-                LabeledContent("Experience", value: "\(selectedExperiences.count) selected")
-                LabeledContent("Target job", value: selectedJob?.parsedTitle ?? "Selected job")
-                HStack {
-                    Button("Edit profile") { step = .start }.accessibilityIdentifier("wizard.edit-profile")
-                    Spacer()
-                    Button("Edit experience") { step = .workLibrary }.accessibilityIdentifier("wizard.edit-experience")
-                    Spacer()
-                    Button("Edit job") { step = .jobDescription }.accessibilityIdentifier("wizard.edit-job")
-                }.font(.caption.weight(.semibold))
+            if let errorMessage { Section { Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.red).accessibilityIdentifier("wizard.error") } }
+            if generatedDraft != nil {
+                Section("Existing draft") {
+                    Text(generatedInputSignature == inputSignature ? "Your generated draft is available." : "Your draft reflects earlier inputs. Generate a replacement to use your changes.")
+                    Button("Return to draft") { step = .generated }.accessibilityIdentifier("wizard.return-to-draft")
+                }
             }
-            Section("Selected tasks") { ForEach(selectedExperiences) { Text("\($0.jobTitle): \($0.tasks.first ?? "No task details")") } }
+            Section("Ready to generate") {
+                reviewRow("Profile", value: startMode == .fresh ? draftName : "Existing resume baseline", identifier: "wizard.edit-profile") { step = .start }
+                reviewRow("Experience", value: "\(selectedExperiences.count) selected", identifier: "wizard.edit-experience") { step = .workLibrary }
+                reviewRow("Target job", value: selectedJob?.displayTitle ?? "Choose a reviewed job", identifier: "wizard.edit-job") { step = .jobDescription }
+            }
+            Section("AI processing") {
+                LabeledContent("Provider", value: selectedProvider?.name ?? "Not configured")
+                Text(selectedProvider == .apple ? "Processes your content on this device." : selectedProvider == nil ? "Choose a provider to generate your resume." : "Sends relevant profile, job, and experience text to \(selectedProvider!.name). Your provider may charge for usage.")
+                    .font(.caption).foregroundStyle(CVeeColors.secondary)
+                if !providerStatus.isEmpty { Text(providerStatus).font(.subheadline).accessibilityIdentifier("wizard.provider-status") }
+                Button("Configure AI provider") { showingProvider = true }.accessibilityIdentifier("wizard.configure-provider")
+            }
+            Section("Selected tasks") { ForEach(selectedExperiences) { Text("\($0.jobTitle): \($0.tasks.joined(separator: "\n"))") } }
             if let selectedJob { Section("Job description") { Text(selectedJob.rawText).lineLimit(8) } }
             if isLoading { Section { ProgressView("Building your tailored resume…").accessibilityIdentifier("wizard.loader") } }
-            if let errorMessage { Section { Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.red).accessibilityIdentifier("wizard.error") } }
-        }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.summary")
+        }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.summary").onAppear(perform: refreshProviderStatus)
     }
 
     private var generatedPage: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if let errorMessage { Text(errorMessage).foregroundStyle(.red).accessibilityIdentifier("wizard.draft-error") }
                 if generatedDraft != nil {
+                    if generatedInputSignature != inputSignature {
+                        Text("This draft reflects earlier inputs. Go Back to review and generate a replacement.").font(.caption).foregroundStyle(CVeeColors.secondary)
+                    }
                     if isEditingGenerated {
                         Picker("Editor format", selection: $generatedEditorMode) {
                             Text("Formatted").tag(EditorMode.formatted)
@@ -2159,6 +2397,7 @@ struct NewResumeView: View {
                         .accessibilityIdentifier("wizard.editor-format")
                         if generatedEditorMode == .latex {
                             TextEditor(text: $generatedLaTeX)
+                                .focused($focusedField, equals: .generated)
                                 .font(.system(.body, design: .monospaced))
                                 .frame(minHeight: 420)
                                 .padding(12)
@@ -2167,45 +2406,108 @@ struct NewResumeView: View {
                                 .accessibilityIdentifier("wizard.latex-editor")
                         } else {
                             TextEditor(text: $generatedText)
+                                .focused($focusedField, equals: .generated)
                                 .frame(minHeight: 420)
                                 .padding(12)
                                 .background(.background)
                                 .accessibilityIdentifier("wizard.formatted-editor")
                         }
                     } else {
-                        ResumePagePreview(pdfData: ResumeExportService().pdfData(for: ResumeTextFormatter.format(generatedText)))
+                        ResumePagePreview(pdfData: generatedPDFData)
                     }
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 8) {
-                            Button("Edit") { toggleGeneratedEditing() }.buttonStyle(.bordered).accessibilityLabel("Edit resume").accessibilityIdentifier("wizard.edit-resume")
-                            Button("Match") { showingAnalysis = true }.buttonStyle(.bordered).accessibilityLabel("Check job match").accessibilityIdentifier("wizard.check-job-match")
-                            compactSaveButton
-                        }
-                        VStack(alignment: .leading, spacing: 10) {
-                            Button("Edit resume") { toggleGeneratedEditing() }.buttonStyle(.bordered).accessibilityIdentifier("wizard.edit-resume")
-                            Button("Check job match") { showingAnalysis = true }.buttonStyle(.bordered).accessibilityIdentifier("wizard.check-job-match")
-                            saveButton
-                        }
-                    }
-                    if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
                 }
             }
             .padding()
         }
         .accessibilityIdentifier("wizard.generated")
+        .onChange(of: generatedText) { _, _ in isSaved = false }
         .onChange(of: generatedLaTeX) { _, source in if generatedEditorMode == .latex { generatedText = ResumeLaTeXFormatter.attributedText(from: source).string } }
         .sheet(isPresented: $showingAnalysis) {
-            ResumeAnalysisSheet(resumeName: generatedDraft?.name ?? "Draft resume", attributedText: ResumeTextFormatter.format(generatedText), job: selectedJob, workLibrary: experiences.map { ResumeAnalysisWorkEntry(id: $0.id, role: $0.jobTitle, company: $0.company, achievement: $0.tasks.joined(separator: "\n"), includedInResume: selectedExperienceIDs.contains($0.id)) })
+            ResumeAnalysisSheet(resumeName: generatedDraft?.name ?? "Draft resume", attributedText: ResumeTextFormatter.format(generatedText), job: generatedJob, workLibrary: experiences.map { ResumeAnalysisWorkEntry(id: $0.id, role: $0.jobTitle, company: $0.company, achievement: $0.tasks.joined(separator: "\n"), includedInResume: generatedExperienceIDs.contains($0.id)) })
         }
     }
 
+    private var generatedActions: some View {
+        ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) {
+                            Button(isEditingGenerated ? "Preview" : "Edit") { toggleGeneratedEditing() }.buttonStyle(.bordered).accessibilityLabel(isEditingGenerated ? "Preview resume" : "Edit resume").accessibilityIdentifier("wizard.edit-resume")
+                            Button("Match") { showingAnalysis = true }.buttonStyle(.bordered).accessibilityLabel("Check job match").accessibilityIdentifier("wizard.check-job-match")
+                            compactSaveButton
+                        }
+                        VStack(alignment: .leading, spacing: 10) {
+                            Button(isEditingGenerated ? "Preview resume" : "Edit resume") { toggleGeneratedEditing() }.buttonStyle(.bordered).accessibilityIdentifier("wizard.edit-resume")
+                            Button("Check job match") { showingAnalysis = true }.buttonStyle(.bordered).accessibilityIdentifier("wizard.check-job-match")
+                            saveButton
+                        }
+                    }
+    }
+
     private var navigationBar: some View {
-        HStack {
-            if step != .start { Button("Back") { moveBack() }.accessibilityIdentifier("wizard.back") }
-            Spacer()
-            if step == .summary { Button(isLoading ? "Generating…" : "Generate Resume") { Task { await generate() } }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.generate") }
-            else if step != .generated { Button("Continue") { advance() }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.next") }
+        VStack(alignment: .leading, spacing: 8) {
+            if let guidance = advanceGuidance, step != .generated {
+                Text(guidance).font(.caption).foregroundStyle(CVeeColors.secondary).accessibilityIdentifier("wizard.advance-guidance")
+            }
+            HStack {
+                if step != .start { Button("Back") { moveBack() }.disabled(isLoading).frame(minHeight: 44).accessibilityIdentifier("wizard.back") }
+                Spacer()
+                if step == .summary {
+                    Button(isLoading ? "Generating…" : generatedDraft == nil ? "Generate Resume" : "Generate replacement") {
+                        focusedField = nil
+                        if generatedDraft != nil && !isSaved { showingReplaceDraft = true }
+                        else { Task { await generate() } }
+                    }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.generate")
+                } else if step == .generated {
+                    generatedActions
+                } else {
+                    Button("Continue") { advance() }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance || isLoading).accessibilityIdentifier("wizard.next")
+                }
+            }
         }.padding(.horizontal).padding(.vertical, 10).background(.bar)
+    }
+
+    private var advanceGuidance: String? {
+        switch step {
+        case .start: return canAdvance ? nil : startMode == .fresh ? "Enter your full name and email to continue." : "Upload a readable PDF or select a saved resume."
+        case .workLibrary: return canAdvance ? nil : "Select at least one task or achievement."
+        case .jobDescription: return canAdvance ? nil : "Select a reviewed job description. Open an unfinished job to complete it."
+        case .summary: return isLoading ? "Keep this session open while your resume is generated." : canAdvance ? nil : !providerReady ? "Configure an available AI provider before generating." : "Review your profile, experience, and job before generating."
+        case .generated: return nil
+        }
+    }
+
+    private func reviewRow(_ title: String, value: String, identifier: String, action: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption).foregroundStyle(CVeeColors.secondary)
+            Text(value).font(.body)
+            Button("Edit \(title.lowercased())", action: action).frame(minHeight: 44).accessibilityIdentifier(identifier)
+        }
+    }
+
+    private var inputSignature: String {
+        ([startMode.rawValue, profileText, baselineText, selectedJob?.id.uuidString ?? "", selectedJob?.rawText ?? ""] + selectedExperiences.sorted { $0.id.uuidString < $1.id.uuidString }.map { "\($0.id):\($0.jobTitle):\($0.company):\($0.dateRange):\($0.tasksText)" }).joined(separator: "\n")
+    }
+
+    private func refreshProviderStatus() {
+        let selection = AIProviderSelection()
+        selectedProvider = selection.provider()
+        guard let selectedProvider else { providerReady = false; providerStatus = "Choose an AI provider in settings."; return }
+        if selectedProvider == .apple {
+            let availability = FoundationModelsAvailability().state()
+            providerReady = availability == .ready
+            providerStatus = providerReady ? "Ready for on-device generation." : availability.description
+        } else {
+            providerReady = selection.hasKey(for: selectedProvider)
+            providerStatus = providerReady ? "Ready to connect when you generate." : "Add an API key before generating."
+        }
+    }
+
+    private func resetWizard() {
+        discardPendingInsertion()
+        generatedDraft = nil; generatedText = ""; generatedPDFData = Data(); generatedLaTeX = ""; pendingResume = nil; pendingResumeWasSaved = false; generatedJob = nil
+        generatedExperienceIDs = []; generatedInputSignature = ""; selectedExperienceIDs = []; selectedJobID = nil
+        baselineText = ""; selectedResumeID = nil; startMode = .fresh; step = .start
+        isEditingGenerated = false; generatedEditorMode = .formatted; isSaved = false; errorMessage = nil
+        taskSearch = ""; jobSearch = ""; loadProfileDraft()
     }
 
     private var saveButton: some View {
@@ -2228,56 +2530,105 @@ struct NewResumeView: View {
     private func advance() {
         focusedField = nil
         if step == .start, startMode == .fresh { profileName = draftName; profileEmail = draftEmail; profilePhone = draftPhone; profileLocation = draftLocation; profileLinkedIn = draftLinkedIn; profileGitHub = draftGitHub; profileEducation = draftEducation; profileSkills = draftSkills; profileCertifications = draftCertifications }
-        generatedDraft = nil; generatedText = ""; generatedLaTeX = ""; generatedEditorMode = .formatted; isEditingGenerated = false; isSaved = false; errorMessage = nil
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { step = ResumeWizardStep(rawValue: step.rawValue + 1)! }
+        step = ResumeWizardStep(rawValue: step.rawValue + 1)!
     }
     private func moveBack() {
         focusedField = nil
-        generatedDraft = nil; generatedText = ""; generatedLaTeX = ""; generatedEditorMode = .formatted; isEditingGenerated = false; isSaved = false; errorMessage = nil
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { step = ResumeWizardStep(rawValue: step.rawValue - 1)! }
+        step = ResumeWizardStep(rawValue: step.rawValue - 1)!
+    }
+    private func refreshGeneratedPreview() {
+        generatedPDFData = ResumeDocumentRenderer().pdfData(for: ResumeDocumentConverter.document(from: generatedText, name: generatedDraft?.name ?? "Draft resume"))
     }
     private func toggleGeneratedEditing() {
         if isEditingGenerated && generatedEditorMode == .latex { generatedText = ResumeLaTeXFormatter.attributedText(from: generatedLaTeX).string }
+        if isEditingGenerated { refreshGeneratedPreview() }
         isEditingGenerated.toggle()
     }
     private func importPDF(_ result: Result<URL, Error>) { do { let url = try result.get(); let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }; guard let text = PDFDocument(url: url)?.string?.trimmingCharacters(in: .whitespacesAndNewlines), text.count > 40 else { errorMessage = "This PDF has no readable text. Choose a text-based PDF."; return }; baselineText = text; selectedResumeID = nil } catch { errorMessage = "The PDF could not be opened. Choose another file." } }
-    private func generate() async { isLoading = true; errorMessage = nil; generatedDraft = nil; if ProcessInfo.processInfo.arguments.contains("-resume-format-fixture") { generatedDraft = ResumeDraft(name: "Andrei Hidalgo — Full Stack AI Developer", summary: "AI developer focused on reliable, user-centered software.", experience: selectedExperiences.map { ($0.jobTitle, $0.tasks) }, skills: ["SwiftUI", "SwiftData", "Python"]); generatedText = JakesResumeTemplate().render(draft: generatedDraft!).string; isEditingGenerated = false; step = .generated; isLoading = false; return }; do { generatedDraft = try await ResumeGenerationService().generate(jobText: selectedJob?.rawText ?? "", work: selectedExperiences, profileName: draftName, profileText: profileText, baselineText: baselineText.isEmpty ? nil : baselineText); generatedText = generatedDraft?.rawText.isEmpty == false ? generatedDraft?.rawText ?? "" : generatedDraft.map { JakesResumeTemplate().render(draft: $0).string } ?? ""; isEditingGenerated = false; step = .generated } catch { errorMessage = error.localizedDescription }; isLoading = false }
-    private var profileText: String { [draftName, draftEmail, draftPhone, draftLocation, draftLinkedIn, draftGitHub, draftEducation, draftSkills, draftCertifications].joined(separator: "\n") }
-    private func saveGeneratedResume() {
-        guard let generatedDraft, let selectedJob else { return }
-        if ProcessInfo.processInfo.arguments.contains("-ui-testing") {
-            isSaved = true
-            self.generatedDraft = nil
-            return
-        }
-        let document = ResumeDocumentConverter.document(from: generatedDraft)
-        let data = try? document.data()
-        let resume = Resume(name: generatedDraft.name, jobTarget: selectedJob, workExperienceIDs: Array(selectedExperienceIDs), sections: [ResumeSection(kind: .summary, order: 0, title: "Resume", attributedText: ResumeTextFormatter.format(generatedText))], structuredDocumentData: data)
-        let restoreAutosave = modelContext.autosaveEnabled
-        modelContext.autosaveEnabled = false
-        modelContext.insert(resume)
+    private func generate() async {
+        guard canAdvance, !isLoading else { return }
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        let signature = inputSignature
+        let job = selectedJob
+        let selectedWork = selectedExperiences
         do {
-            try modelContext.save()
-            modelContext.autosaveEnabled = restoreAutosave
-            isSaved = true
-            onSaved()
-        } catch {
-            modelContext.autosaveEnabled = restoreAutosave
-            errorMessage = error.localizedDescription
+            if generatedDraft != nil && ProcessInfo.processInfo.arguments.contains("-ui-testing-regeneration-failure") { throw AIProviderError.provider }
+            let draft: ResumeDraft
+            if ProcessInfo.processInfo.arguments.contains("-resume-format-fixture") {
+                draft = ResumeDraft(name: "Test User — Full Stack AI Developer", summary: "AI developer focused on reliable, user-centered software.", experience: selectedWork.map { ($0.jobTitle, $0.tasks) }, skills: ["SwiftUI", "SwiftData", "Python"])
+            } else {
+                draft = try await ResumeGenerationService().generate(jobText: job?.rawText ?? "", work: selectedWork, profileName: draftName, profileText: profileText, baselineText: baselineText.isEmpty ? nil : baselineText)
+            }
+            generatedDraft = draft
+            generatedText = draft.rawText.isEmpty ? JakesResumeTemplate().render(draft: draft).string : draft.rawText
+            refreshGeneratedPreview()
+            generatedLaTeX = ""; generatedEditorMode = .formatted; isEditingGenerated = false
+            generatedInputSignature = signature; generatedJob = job; generatedExperienceIDs = selectedWork.map(\.id)
+            discardPendingInsertion()
+            pendingResume = nil; pendingResumeWasSaved = false; isSaved = false; step = .generated
+        } catch { errorMessage = error.localizedDescription }
+    }
+    private var profileText: String { [draftName, draftEmail, draftPhone, draftLocation, draftLinkedIn, draftGitHub, draftEducation, draftSkills, draftCertifications].joined(separator: "\n") }
+    private func discardPendingInsertion() {
+        if let pendingResume, !pendingResumeWasSaved {
+            pendingResume.sections.forEach(modelContext.delete)
+            modelContext.delete(pendingResume)
         }
     }
+    private func saveGeneratedResume() {
+        guard let generatedDraft else { return }
+        let savedJob = generatedJob?.isDeleted == false ? generatedJob : nil
+        do {
+            let document = ResumeDocumentConverter.document(from: generatedText, name: generatedDraft.name)
+            let data = try document.data()
+            let resume: Resume
+            if let pendingResume { resume = pendingResume }
+            else {
+                resume = Resume(name: generatedDraft.name, jobTarget: savedJob, workExperienceIDs: generatedExperienceIDs, sections: [ResumeSection(kind: .summary, order: 0, title: "Resume", attributedText: ResumeTextFormatter.format(generatedText))], structuredDocumentData: data)
+                modelContext.insert(resume)
+                pendingResume = resume
+            }
+            resume.structuredDocumentData = data
+            resume.sections.first?.attributedText = ResumeTextFormatter.format(generatedText)
+            resume.updatedAt = .now
+            let restoreAutosave = modelContext.autosaveEnabled
+            modelContext.autosaveEnabled = false
+            defer { modelContext.autosaveEnabled = restoreAutosave }
+            if ProcessInfo.processInfo.arguments.contains("-ui-testing-save-failure"), !didSimulateSaveFailure {
+                didSimulateSaveFailure = true
+                throw CocoaError(.fileWriteUnknown)
+            }
+            try modelContext.save()
+            errorMessage = nil
+            isSaved = true
+            pendingResumeWasSaved = true
+            UIAccessibility.post(notification: .announcement, argument: "Resume saved")
+            onSaved()
+        } catch { errorMessage = "Couldn’t save resume. Your draft is retained. \(error.localizedDescription)" }
+    }
+
 }
 
 struct ResumesView: View {
+    var onCreateResume: () -> Void = {}
+    @State private var pendingDeletion: [Resume] = []
+    @State private var deleteError: String?
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Resume.updatedAt, order: .reverse) private var resumes: [Resume]
     var body: some View {
         List {
-            if resumes.isEmpty { ContentUnavailableView("No saved resumes", systemImage: "doc.text", description: Text("Create your first tailored resume from the Resume Wizard tab.")) }
+            if resumes.isEmpty {
+                ContentUnavailableView {
+                    Label("No saved resumes", systemImage: "doc.text")
+                } description: { Text("Turn your work history into a resume tailored to a job.") }
+                actions: { Button("Create resume", action: onCreateResume).buttonStyle(CoralButtonStyle()).accessibilityIdentifier("resumes.create") }
+            }
             ForEach(resumes) { resume in
                 NavigationLink { ResumeEditorView(resume: resume) } label: { VStack(alignment: .leading, spacing: 4) { Text(resume.name).font(.headline); Text(resume.jobTarget?.parsedTitle ?? resume.jobTarget?.rawText.prefix(70).description ?? "Saved draft").font(.subheadline).foregroundStyle(.secondary); Text(resume.updatedAt, style: .date).font(.caption).foregroundStyle(CVeeColors.secondary) } }.accessibilityIdentifier("resume.saved-row")
                     .listRowBackground(CVeeColors.page)
-            }.onDelete { offsets in offsets.map { resumes[$0] }.forEach(modelContext.delete) }
+            }.onDelete { offsets in pendingDeletion = offsets.map { resumes[$0] } }
         }
         .listStyle(.plain)
         .frame(maxWidth: 760)
@@ -2285,6 +2636,19 @@ struct ResumesView: View {
         .navigationTitle("Resumes")
         .scrollContentBackground(.hidden)
         .background(CVeeColors.page)
+        .alert("Delete resume?", isPresented: Binding(get: { !pendingDeletion.isEmpty }, set: { if !$0 { pendingDeletion = [] } })) {
+            Button("Delete resume", role: .destructive) {
+                pendingDeletion.forEach(modelContext.delete)
+                do { try modelContext.save() }
+                catch { modelContext.rollback(); deleteError = error.localizedDescription }
+                pendingDeletion = []
+            }
+            Button("Cancel", role: .cancel) { pendingDeletion = [] }
+        } message: { Text("This permanently removes the saved resume. Your tasks and jobs are retained.") }
+        .alert("Couldn’t delete resume", isPresented: Binding(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(deleteError ?? "Try again.") }
+
     }
 }
 
@@ -2326,6 +2690,7 @@ struct LegacyResumeView: View {
     @State private var editableCopy: Resume?
     @State private var showShare = false
     @State private var shareItems: [Any] = []
+    @State private var operationError: String?
 
     var body: some View {
         VStack(spacing: 12) {
@@ -2346,14 +2711,32 @@ struct LegacyResumeView: View {
         }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareItems) }
         .sheet(item: $editableCopy) { StructuredResumeEditorView(resume: $0) }
+        .alert("Resume action failed", isPresented: Binding(get: { operationError != nil }, set: { if !$0 { operationError = nil } })) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(operationError ?? "Try again.") }
     }
 
     private func createCopy() {
-        guard let data = try? ResumeDocumentConverter.document(for: resume).data() else { return }
-        let copy = Resume(name: "\(resume.name) — editable", jobTarget: resume.jobTarget, workExperienceIDs: resume.linkedWorkExperienceIDs, structuredDocumentData: data)
-        modelContext.insert(copy); try? modelContext.save(); editableCopy = copy
+        var insertedCopy: Resume?
+        do {
+            let data = try ResumeDocumentConverter.document(for: resume).data()
+            let copy = Resume(name: "\(resume.name) — editable", jobTarget: resume.jobTarget, workExperienceIDs: resume.linkedWorkExperienceIDs, structuredDocumentData: data)
+            insertedCopy = copy
+            modelContext.insert(copy)
+            try modelContext.save()
+            editableCopy = copy
+        } catch {
+            if let insertedCopy { modelContext.delete(insertedCopy) }
+            operationError = error.localizedDescription
+        }
     }
-    private func export(pdf: Bool) { let service = ResumeExportService(); shareItems = pdf ? [service.pdfData(for: resume)] : [(try? service.rtfData(for: resume)) as Any].compactMap { $0 }; showShare = !shareItems.isEmpty }
+    private func export(pdf: Bool) {
+        do {
+            let service = ResumeExportService()
+            shareItems = pdf ? [service.pdfData(for: resume)] : [try service.rtfData(for: resume)]
+            showShare = !shareItems.isEmpty
+        } catch { operationError = error.localizedDescription }
+    }
 }
 
 struct ResumeRecoveryView: View {
@@ -2378,6 +2761,7 @@ struct ResumeAnalysisSheet: View {
     let workLibrary: [ResumeAnalysisWorkEntry]
     @State private var requirements: [ResumeRequirement] = []
     @State private var newPhrase = ""
+    @FocusState private var phraseFocused: Bool
     @State private var report: ResumeAnalysisReport?
     @State private var pageTarget = 1
     @State private var isEditingRequirements = false
@@ -2474,6 +2858,7 @@ struct ResumeAnalysisSheet: View {
             .navigationTitle("Resume report")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { phraseFocused = false } }
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { finish() } }
                 ToolbarItem(placement: .confirmationAction) {
                     if isEditingRequirements || !isChecklistSaved {
@@ -2552,6 +2937,7 @@ struct ResumeAnalysisSheet: View {
                 .accessibilityIdentifier("analysis.suggest-requirements")
             HStack {
                 TextField("Add exact phrase", text: $newPhrase)
+                    .focused($phraseFocused).submitLabel(.done).onSubmit { phraseFocused = false }
                     .accessibilityIdentifier("analysis.new-phrase")
                 Button("Add") { add(newPhrase); newPhrase = "" }
                     .accessibilityIdentifier("analysis.add-phrase")
@@ -2608,29 +2994,25 @@ struct ResumeAnalysisSheet: View {
             jobChanged = false
             removedPhrases = []
             isEditingRequirements = false
-            message = "Requirements saved for this job and will be reused across resumes."
+            message = "Requirements reviewed. Tap Done to save them for this job."
             recheck(using: requirements, includeDocumentHealth: false)
         } catch { message = "Requirements could not be saved: \(error.localizedDescription)" }
     }
 
     private func finish() {
         suggestionTask?.cancel()
-        let shouldSave = pendingSave
-        let checklistData = pendingChecklistData
-        let job = job
+        if pendingSave, let checklistData = pendingChecklistData, let job {
+            job.requirementChecklistData = checklistData
+            do { try modelContext.save() }
+            catch {
+                message = "Requirements could not be saved: \(error.localizedDescription)"
+                UIAccessibility.post(notification: .announcement, argument: message)
+                return
+            }
+        }
         pendingSave = false
         pendingChecklistData = nil
         dismiss()
-        guard shouldSave, let checklistData, let job else { return }
-        guard !ProcessInfo.processInfo.arguments.contains("-ui-testing") else { return }
-        Task { @MainActor in
-            await Task.yield()
-            let restoreAutosave = modelContext.autosaveEnabled
-            modelContext.autosaveEnabled = false
-            job.requirementChecklistData = checklistData
-            try? modelContext.save()
-            modelContext.autosaveEnabled = restoreAutosave
-        }
     }
 
     private func recheck(using checkedRequirements: [ResumeRequirement]? = nil, includeDocumentHealth: Bool = true) {
@@ -2734,16 +3116,17 @@ struct ResumePDFView: UIViewRepresentable {
 
     func updateUIView(_ uiView: PDFView, context: Context) {
         guard context.coordinator.pdfData != pdfData else { return }
-        context.coordinator.pdfData = pdfData
-        guard let document = PDFDocument(data: pdfData), document.pageCount > 0 else {
-            uiView.document = nil
-            uiView.accessibilityValue = nil
-            return
+        let data = pdfData
+        let coordinator = context.coordinator
+        coordinator.pdfData = data
+        DispatchQueue.main.async { [weak uiView] in
+            guard let uiView, coordinator.pdfData == data else { return }
+            let document = PDFDocument(data: data)
+            uiView.document = document
+            uiView.autoScales = true
+            if let first = document?.page(at: 0) { uiView.go(to: first) }
+            uiView.accessibilityValue = document?.string
         }
-        uiView.document = document
-        uiView.autoScales = true
-        uiView.go(to: document.page(at: 0)!)
-        uiView.accessibilityValue = document.string
     }
 }
 

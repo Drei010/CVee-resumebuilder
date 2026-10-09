@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 import PDFKit
 import UIKit
 @testable import CVee_resumebuilder
@@ -20,6 +21,51 @@ final class ResumeRenderingTests: XCTestCase {
         XCTAssertEqual(document.originalSource, source)
         XCTAssertTrue(document.conversionNotes.isEmpty == false)
         XCTAssertTrue(document.sections.contains { $0.title == "Review placement" })
+    }
+
+    func testEditedResumePersistsAndExportsAllSuppliedContent() throws {
+        let source = """
+        Taylor Edited
+        taylor@example.com | https://linkedin.com/in/taylor | Manila
+        Unclassified supplied content.
+        WORK EXPERIENCE
+        Engineer | Example Company | 2024 – Present
+        Built EDITED_SENTINEL tools with SwiftUI.
+        • Preserved BULLET_SENTINEL metrics supplied by the user.
+        PROJECTS
+        Resume workspace
+        Kept PROJECT_SENTINEL description.
+        SKILLS & ABILITIES
+        :
+        SwiftUI, Python
+        CERTIFICATIONS
+        CERTIFICATION_SENTINEL | 2025
+        """
+        let container = try ModelContainer(for: Resume.self, ResumeSection.self, JobTarget.self, WorkExperience.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = container.mainContext
+        let document = ResumeDocumentConverter.document(from: source, name: "Edited resume")
+        let resume = Resume(name: "Edited resume", structuredDocumentData: try document.data())
+        context.insert(resume)
+        try context.save()
+        let saved = try XCTUnwrap(context.fetch(FetchDescriptor<Resume>()).first)
+        let reopened = try ResumeDocumentConverter.document(for: saved)
+        let rendered = ResumeDocumentRenderer().attributedText(for: reopened).string
+        let pdf = try XCTUnwrap(PDFDocument(data: ResumeExportService().pdfData(for: saved))).string ?? ""
+        let data = try ResumeExportService().rtfData(for: saved)
+        let rtf = try NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil).string
+        for expected in ["Taylor Edited", "https://linkedin.com/in/taylor", "Manila", "Unclassified supplied content", "EDITED_SENTINEL", "BULLET_SENTINEL", "PROJECT_SENTINEL", "SwiftUI", "Python", "CERTIFICATION_SENTINEL"] {
+            for actual in [rendered, pdf, rtf] { XCTAssertTrue(actual.contains(expected), "Missing \(expected)") }
+        }
+        XCTAssertEqual(reopened.originalSource, source)
+    }
+
+    func testCustomBulletOnlySectionExportsOnce() throws {
+        var document = ResumeDocument.empty
+        document.sections.append(ResumeDocumentSection(kind: .custom, title: "Achievements", content: .custom(CustomContent(bullets: [ResumeBullet(text: "UNIQUE_BULLET")]))))
+        let rendered = ResumeDocumentRenderer().attributedText(for: document).string
+        XCTAssertEqual(rendered.components(separatedBy: "UNIQUE_BULLET").count - 1, 1)
+        document.sections[1].content = .custom(CustomContent(paragraphs: ["First paragraph", "Second paragraph"], bullets: [ResumeBullet(text: "UNIQUE_BULLET")]))
+        XCTAssertEqual(ResumeDocumentRenderer().attributedText(for: document).string.components(separatedBy: "UNIQUE_BULLET").count - 1, 1)
     }
 
     func testLatexImporterUnescapesSupportedSymbolsAndReportsUnknownCommands() {

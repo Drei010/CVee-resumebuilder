@@ -6,7 +6,7 @@ CVee is a SwiftUI iOS resume workspace. It stores reusable work history, saved t
 
 The five tabs are:
 
-- Tasks — add, edit, delete, search, and filter work experiences by company. Each entry stores a role, company, dates, and task/achievement lines. Existing tasks can be rewritten into two concise sentences with on-device AI.
+- Tasks — add, edit, delete, search, and filter work experiences by company. The dog mascot greets you with first-use guidance, and editable progress widgets (tasks by company, share of tasks used in resumes, and more) sit below quick capture. Each entry stores a role, company, dates, and task/achievement lines. Existing tasks can be rewritten into two concise sentences with on-device AI.
 - Saved Jobs — add pasted job descriptions with a title and company, then search, edit, delete, and inspect resumes linked to a job. The core layer also contains a LinkedIn fetcher, but the current UI only creates pasted-text jobs.
 - Resume Wizard — start fresh with profile information or use a saved/uploaded text-based PDF as a baseline; select work entries; choose a saved job; review a summary; generate; edit the plain text; and save the result.
 - Resumes — browse saved drafts, open an editable resume, preview it, delete it, and share PDF or RTF exports. Saved content currently uses one RTF-backed resume section and the `jakes` template identifier.

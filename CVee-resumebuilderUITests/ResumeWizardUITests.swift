@@ -9,15 +9,18 @@ final class ResumeWizardUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
         app.launch()
-        let group = app.buttons["tasks.company-section"].firstMatch
-        XCTAssertTrue(group.waitForExistence(timeout: timeout))
-        let task = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Reduced manual search time'")).firstMatch
-        XCTAssertTrue(task.exists)
+        let companyMix = app.descendants(matching: .any)["tasks.metric.companyMix"]
+        XCTAssertTrue(companyMix.waitForExistence(timeout: timeout))
+        XCTAssertTrue((companyMix.value as? String ?? "").contains("Accenture Philippines"))
         capture(app, "tasks-light")
-        for _ in 0..<3 where !group.isHittable { app.swipeUp() }
+        let group = app.buttons["tasks.company-section"].firstMatch
+        let task = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Reduced manual search time'")).firstMatch
+        XCTAssertTrue(revealHittable(task, in: app))
         XCTAssertTrue(group.isHittable)
         group.tap()
         XCTAssertFalse(task.exists)
+        // Collapsing shortens the list, so the header can settle behind the tab bar.
+        XCTAssertTrue(revealHittable(group, in: app))
         group.tap()
         XCTAssertTrue(task.waitForExistence(timeout: timeout))
         let add = app.buttons["tasks.actions"]
@@ -55,7 +58,9 @@ final class ResumeWizardUITests: XCTestCase {
             app.buttons["Cancel"].tap()
             return
         }
-        app.buttons["tasks.confirm-company"].tap()
+        app.buttons["Sheet Grabber"].firstMatch.swipeUp()
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.confirm-company"], in: app))
+        XCTAssertTrue(app.buttons["New company"].waitForExistence(timeout: timeout))
         app.buttons["New company"].tap()
         let company = app.textFields["tasks.confirm-company-name"]
         XCTAssertTrue(company.waitForExistence(timeout: timeout))
@@ -69,7 +74,8 @@ final class ResumeWizardUITests: XCTestCase {
         role.typeText("Product Designer")
         dismissKeyboard(in: app)
         app.buttons["Confirm recording"].tap()
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Product Designer'")).firstMatch.waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.descendants(matching: .any)["tasks.mascot"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(revealHittable(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Product Designer'")).firstMatch, in: app))
     }
 
     func testTaskRowsLeadWithAchievementAndHideCompanyBadge() {
@@ -78,7 +84,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launch()
 
         let task = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Reduced manual search time'")).firstMatch
-        XCTAssertTrue(task.waitForExistence(timeout: timeout))
+        XCTAssertTrue(revealHittable(task, in: app))
         XCTAssertFalse(task.label.contains("Accenture Philippines"))
     }
 
@@ -88,7 +94,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launch()
 
         let search = app.textFields["tasks.search"]
-        XCTAssertTrue(search.waitForExistence(timeout: timeout))
+        XCTAssertTrue(revealHittable(search, in: app))
         let resultCount = app.staticTexts["tasks.result-count"]
         XCTAssertTrue(resultCount.waitForExistence(timeout: timeout))
         XCTAssertTrue(resultCount.label.contains("30"))
@@ -255,7 +261,10 @@ final class ResumeWizardUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["task.ai-review.error"].waitForExistence(timeout: timeout))
         XCTAssertFalse(app.buttons["task.ai-review.use"].isEnabled)
-        app.buttons["Cancel"].tap()
+        // On iPad both stacked sheets show a Cancel button, so close the review explicitly first.
+        let keepOriginal = app.buttons["task.ai-review.keep"]
+        XCTAssertTrue(revealBelow(keepOriginal, in: app))
+        keepOriginal.tap()
         app.buttons["Cancel"].tap()
     }
 
@@ -287,7 +296,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.launch()
 
         let task = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Reduced manual search time'")).firstMatch
-        XCTAssertTrue(task.waitForExistence(timeout: timeout))
+        XCTAssertTrue(revealHittable(task, in: app))
         task.tap()
         app.buttons["Edit"].tap()
         let details = app.descendants(matching: .any)["task.detail.details"]
@@ -341,12 +350,12 @@ final class ResumeWizardUITests: XCTestCase {
         app.textFields["Company"].typeText("Example Studio")
         app.buttons["task.save"].tap()
         let task = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Product Designer'")).firstMatch
-        XCTAssertTrue(task.waitForExistence(timeout: timeout))
+        XCTAssertTrue(revealHittable(task, in: app))
         task.tap()
         XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: timeout))
         app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["tasks.import"].waitForExistence(timeout: timeout))
-        app.buttons["tasks.import"].tap()
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.import"], in: app))
         XCTAssertTrue(app.buttons["import.choose-document"].waitForExistence(timeout: timeout))
         app.buttons["Cancel"].tap()
         selectTab("Profile", in: app)
@@ -357,7 +366,7 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(identifier: "Clear all data").allElementsBoundByIndex.contains { !$0.isEnabled })
         app.buttons["Cancel"].tap()
         selectTab("Tasks", in: app)
-        XCTAssertTrue(task.waitForExistence(timeout: timeout))
+        XCTAssertTrue(revealHittable(task, in: app))
     }
 
     func testDarkLargeTextTaskLayout() {
@@ -367,10 +376,10 @@ final class ResumeWizardUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["tasks.actions"].waitForExistence(timeout: timeout))
         XCTAssertTrue(app.buttons["tasks.actions"].isHittable)
-        let companySection = app.buttons["tasks.company-section"].firstMatch
-        for _ in 0..<3 where !companySection.isHittable { app.swipeUp() }
-        XCTAssertTrue(companySection.isHittable)
+        XCTAssertTrue(app.descendants(matching: .any)["tasks.mascot"].waitForExistence(timeout: timeout))
         capture(app, "tasks-dark-accessibility")
+        let companySection = app.buttons["tasks.company-section"].firstMatch
+        XCTAssertTrue(revealHittable(companySection, in: app, steps: 10))
         app.buttons["Resume Wizard"].firstMatch.tap()
         XCTAssertTrue(app.descendants(matching: .any)["wizard.progress"].waitForExistence(timeout: timeout))
         capture(app, "wizard-dark-accessibility")
@@ -390,6 +399,7 @@ final class ResumeWizardUITests: XCTestCase {
             app.buttons["Previous Page"].tap()
         }
         app.buttons[name].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: timeout))
     }
 
     func testWizardProgressAndBackNavigation() {
@@ -472,6 +482,9 @@ final class ResumeWizardUITests: XCTestCase {
         app.launch()
 
         app.buttons["Resume Wizard"].firstMatch.tap()
+        let name = app.textFields["wizard.full-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: timeout))
+        name.tap(); name.typeText("Test User\n")
         let email = app.textFields["wizard.email"]
         XCTAssertTrue(email.waitForExistence(timeout: timeout))
         email.tap()
@@ -487,7 +500,8 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["1 selected"].waitForExistence(timeout: timeout))
         app.buttons["wizard.next"].tap()
 
-        let job = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Full Stack AI Developer'"))
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.job-description"].waitForExistence(timeout: timeout))
+        let job = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'wizard.job.'"))
         XCTAssertTrue(job.firstMatch.waitForExistence(timeout: timeout))
         job.firstMatch.tap()
         app.buttons["wizard.next"].tap()
@@ -505,7 +519,7 @@ final class ResumeWizardUITests: XCTestCase {
         let preview = app.descendants(matching: .any)["wizard.generated.pdf"]
         XCTAssertTrue(preview.waitForExistence(timeout: timeout))
         XCTAssertFalse(preview.frame.isEmpty)
-        assertPreviewContainsText(app, preview, "Andrei Hidalgo")
+        assertPreviewContainsText(app, preview, "Test User")
         capture(app, "resume-preview-before-edit")
         let checkMatch = app.buttons["wizard.check-job-match"]
         XCTAssertTrue(checkMatch.waitForExistence(timeout: timeout))
@@ -518,10 +532,11 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(requirement.waitForExistence(timeout: timeout))
         requirement.tap()
         requirement.typeText("Python")
+        requirement.typeText("\n")
+        dismissKeyboard(in: app)
         let addPhrase = app.buttons["analysis.add-phrase"]
         XCTAssertTrue(tapWhenHittable(addPhrase, in: app))
         XCTAssertTrue(app.staticTexts["Python"].waitForExistence(timeout: timeout))
-        requirement.typeText("\n")
         dismissKeyboard(in: app)
         let toolbarSave = app.buttons["analysis.save-requirements-toolbar"]
         if toolbarSave.waitForExistence(timeout: 2) {
@@ -558,18 +573,235 @@ final class ResumeWizardUITests: XCTestCase {
         let resumesTab = app.buttons["Resumes"].firstMatch
         XCTAssertTrue(resumesTab.waitForExistence(timeout: timeout))
         resumesTab.tap()
-        let savedResume = app.buttons["resume.saved-row"]
+        let savedResume = app.buttons["resume.saved-row"].firstMatch
         XCTAssertTrue(savedResume.waitForExistence(timeout: timeout))
         savedResume.tap()
         XCTAssertTrue(app.descendants(matching: .any)["resume.editor-mode"].waitForExistence(timeout: timeout))
         app.buttons["Preview"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["resume.structured-preview"].waitForExistence(timeout: timeout))
+        XCTAssertTrue((app.descendants(matching: .any)["resume.structured-preview"].value as? String ?? "").contains("PREVIEW"))
         app.buttons["Content"].tap()
         XCTAssertTrue(app.buttons["resume.add-section"].waitForExistence(timeout: timeout))
         XCTAssertTrue(app.buttons["resume.export"].waitForExistence(timeout: timeout))
         app.buttons["resume.export"].tap()
         XCTAssertTrue(app.buttons["resume.export-pdf"].waitForExistence(timeout: timeout))
         XCTAssertTrue(app.buttons["resume.export-rtf"].waitForExistence(timeout: timeout))
+    }
+
+    func testDraftSurvivesNavigationFailedReplacementAndSaveRetry() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture", "-ui-testing-regeneration-failure", "-ui-testing-save-failure"]
+        app.launch()
+        generateFixture(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.edit-resume"], in: app))
+        let editor = app.textViews["wizard.formatted-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: timeout))
+        editor.tap(); editor.typeText(" NAVIGATION_SENTINEL")
+        dismissKeyboard(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.edit-resume"], in: app))
+        app.buttons["wizard.back"].tap()
+        XCTAssertTrue(app.buttons["wizard.return-to-draft"].waitForExistence(timeout: timeout))
+        selectTab("Tasks", in: app)
+        selectTab("Resume Wizard", in: app)
+        XCTAssertTrue(app.buttons["wizard.return-to-draft"].waitForExistence(timeout: timeout))
+        app.buttons["wizard.generate"].tap()
+        XCTAssertTrue(app.buttons["wizard.confirm-replacement"].firstMatch.waitForExistence(timeout: timeout))
+        dismissConfirmation("Keep draft", in: app)
+        app.buttons["wizard.generate"].tap()
+        app.buttons["wizard.confirm-replacement"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.error"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.return-to-draft"], in: app))
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.edit-resume"], in: app))
+        XCTAssertTrue((editor.value as? String ?? "").contains("NAVIGATION_SENTINEL"))
+        app.buttons["wizard.start-over"].tap()
+        dismissConfirmation("Keep working", in: app)
+        XCTAssertTrue((editor.value as? String ?? "").contains("NAVIGATION_SENTINEL"))
+        dismissKeyboard(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.edit-resume"], in: app))
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.save-resume"], in: app))
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Couldn’t save resume'")).firstMatch.waitForExistence(timeout: timeout))
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.save-resume"], in: app))
+        XCTAssertTrue(app.navigationBars["Resumes"].waitForExistence(timeout: timeout))
+        XCTAssertEqual(app.buttons.matching(identifier: "resume.saved-row").count, 2, "One fixture and one generated resume; retry must not insert a duplicate")
+        app.buttons["resume.saved-row"].firstMatch.tap()
+        app.buttons["Preview"].tap()
+        let pdf = app.descendants(matching: .any)["resume.structured-preview"]
+        XCTAssertTrue(pdf.waitForExistence(timeout: timeout))
+        XCTAssertTrue((pdf.value as? String ?? "").contains("NAVIGATION_SENTINEL"))
+        capture(app, "draft-recovered-saved-reopened")
+    }
+
+    func testProgressWidgetsCanBeAddedAndReset() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
+        app.launch()
+
+        let recent = app.descendants(matching: .any)["tasks.metric.recentTasks"]
+        XCTAssertTrue(app.descendants(matching: .any)["tasks.metric.resumeUsage"].waitForExistence(timeout: timeout))
+        XCTAssertFalse(recent.exists)
+
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.metrics.edit"], in: app))
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.metrics.add.recentTasks"], in: app))
+        XCTAssertTrue(app.descendants(matching: .any)["tasks.metrics.shown.recentTasks"].waitForExistence(timeout: timeout))
+        capture(app, "tasks-widget-editor")
+        app.buttons["tasks.metrics.done"].tap()
+        XCTAssertTrue(recent.waitForExistence(timeout: timeout))
+        XCTAssertTrue((recent.value as? String ?? "").contains("1 task recorded"))
+
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.metrics.edit"], in: app))
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.metrics.reset"], in: app))
+        app.buttons["tasks.metrics.done"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["tasks.metric.companyMix"].waitForExistence(timeout: timeout))
+        XCTAssertFalse(recent.exists)
+    }
+
+    func testFirstUseGuidanceAndEmptyResumeAction() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["tasks.first-use-guidance"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.descendants(matching: .any)["tasks.metric.companyMix"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.descendants(matching: .any)["tasks.metric.resumeUsage"].exists)
+        capture(app, "first-use-tasks")
+        selectTab("Resumes", in: app)
+        XCTAssertTrue(app.buttons["resumes.create"].waitForExistence(timeout: timeout))
+        app.buttons["resumes.create"].tap()
+        XCTAssertTrue(app.textFields["wizard.full-name"].waitForExistence(timeout: timeout))
+        XCTAssertEqual(app.textFields["wizard.full-name"].value as? String, "Full name")
+        XCTAssertFalse(app.buttons["wizard.next"].isEnabled)
+        XCTAssertTrue(app.staticTexts["wizard.advance-guidance"].exists)
+        capture(app, "first-use-wizard-validation")
+        if #available(iOS 17.0, *) { try app.performAccessibilityAudit(for: [.hitRegion, .elementDetection]) }
+    }
+
+    func testLargeTextKeyboardAndLandscapeWizard() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-ui-testing-dark", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        selectTab("Resume Wizard", in: app)
+        let name = app.textFields["wizard.full-name"]
+        XCTAssertTrue(revealBelow(name, in: app))
+        name.tap(); name.typeText("A very long candidate name\n")
+        let email = app.textFields["wizard.email"]
+        XCTAssertTrue(revealBelow(email, in: app))
+        email.tap(); email.typeText("candidate@example.com")
+        capture(app, "wizard-dark-large-text-keyboard")
+        dismissKeyboard(in: app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        // Rotation relayouts asynchronously; wait for it instead of sampling mid-animation.
+        let nextHittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: app.buttons["wizard.next"])
+        XCTAssertEqual(XCTWaiter.wait(for: [nextHittable], timeout: timeout), .completed)
+        capture(app, "wizard-dark-large-text-landscape")
+    }
+
+    func testJobRepairAndProviderConfigurationKeepWizardSelections() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture", "-ui-testing-unreviewed-job"]
+        app.launch()
+        selectTab("Resume Wizard", in: app)
+        let name = app.textFields["wizard.full-name"]
+        name.tap(); name.typeText("Test User\n")
+        app.textFields["wizard.email"].tap(); app.textFields["wizard.email"].typeText("test@example.com")
+        dismissKeyboard(in: app)
+        app.buttons["wizard.next"].tap()
+        XCTAssertTrue(app.buttons["wizard.select-all"].waitForExistence(timeout: timeout))
+        app.buttons["wizard.select-all"].tap()
+        XCTAssertTrue(app.staticTexts["1 selected"].waitForExistence(timeout: timeout))
+        app.buttons["wizard.next"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.job-description"].waitForExistence(timeout: timeout))
+        let job = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'wizard.job.'")).firstMatch
+        XCTAssertTrue(job.isEnabled)
+        XCTAssertFalse(app.buttons["wizard.next"].isEnabled)
+        job.tap()
+        XCTAssertTrue(app.buttons["Mark reviewed"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(tapWhenHittable(app.buttons["Mark reviewed"], in: app))
+        app.buttons["Done"].tap()
+        job.tap()
+        XCTAssertTrue(app.buttons["wizard.next"].isEnabled)
+        app.buttons["wizard.next"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.summary"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.configure-provider"], in: app))
+        XCTAssertTrue(app.descendants(matching: .any)["ai-provider.selector"].waitForExistence(timeout: timeout))
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["wizard.generate"].waitForExistence(timeout: timeout))
+        app.swipeDown()
+        app.buttons["wizard.edit-experience"].tap()
+        XCTAssertTrue(app.staticTexts["1 selected"].waitForExistence(timeout: timeout))
+        capture(app, "wizard-job-repaired-selection-retained")
+    }
+
+    func testNoMatchingJobsAndDeletionCancellation() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
+        app.launch()
+        selectTab("Saved Jobs", in: app)
+        let search = app.searchFields.firstMatch
+        // Newer iOS keeps the search bar tucked under the large title until the list is pulled down.
+        if !search.waitForExistence(timeout: 2) { app.swipeDown() }
+        XCTAssertTrue(search.waitForExistence(timeout: timeout))
+        search.tap(); search.typeText("NO_MATCH_SENTINEL")
+        XCTAssertTrue(app.staticTexts["No matching jobs"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(tapWhenHittable(app.buttons["Clear search"], in: app))
+        dismissKeyboard(in: app)
+        if app.navigationBars["Saved Jobs"].buttons["Close"].exists { app.navigationBars["Saved Jobs"].buttons["Close"].tap() }
+        let job = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Ready for resume'")).firstMatch
+        XCTAssertTrue(job.waitForExistence(timeout: timeout))
+        job.swipeLeft()
+        app.buttons["Delete"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Delete job"].waitForExistence(timeout: timeout))
+        dismissConfirmation("Cancel", in: app)
+        XCTAssertTrue(job.exists)
+        selectTab("Resumes", in: app)
+        let resume = app.buttons["resume.saved-row"].firstMatch
+        XCTAssertTrue(resume.waitForExistence(timeout: timeout))
+        resume.swipeLeft()
+        app.buttons["Delete"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Delete resume"].waitForExistence(timeout: timeout))
+        dismissConfirmation("Cancel", in: app)
+        XCTAssertTrue(resume.exists)
+        capture(app, "saved-resume-delete-cancelled")
+        selectTab("Tasks", in: app)
+        let task = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Reduced manual search time'")).firstMatch
+        XCTAssertTrue(revealHittable(task, in: app))
+        task.swipeLeft()
+        app.buttons["Delete"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Delete task"].firstMatch.waitForExistence(timeout: timeout))
+        dismissConfirmation("Cancel", in: app)
+        XCTAssertTrue(task.exists)
+        capture(app, "task-delete-cancelled")
+    }
+
+    private func dismissConfirmation(_ label: String, in app: XCUIApplication) {
+        if app.buttons[label].firstMatch.waitForExistence(timeout: 1) { app.buttons[label].firstMatch.tap() }
+        else {
+            let close = app.buttons["Close"].firstMatch
+            XCTAssertTrue(close.waitForExistence(timeout: timeout))
+            close.tap()
+        }
+    }
+
+    private func generateFixture(in app: XCUIApplication) {
+        selectTab("Resume Wizard", in: app)
+        let name = app.textFields["wizard.full-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: timeout))
+        name.tap(); name.typeText("Test User\n")
+        let email = app.textFields["wizard.email"]
+        XCTAssertTrue(revealBelow(email, in: app))
+        email.tap(); email.typeText("test@example.com")
+        dismissKeyboard(in: app)
+        app.buttons["wizard.next"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.work-library"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.buttons["wizard.select-all"].waitForExistence(timeout: timeout))
+        app.buttons["wizard.select-all"].tap()
+        XCTAssertTrue(app.staticTexts["1 selected"].waitForExistence(timeout: timeout))
+        app.buttons["wizard.next"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.job-description"].waitForExistence(timeout: timeout))
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'wizard.job.'")).firstMatch.tap()
+        app.buttons["wizard.next"].tap()
+        XCTAssertTrue(app.buttons["wizard.generate"].waitForExistence(timeout: timeout))
+        app.buttons["wizard.generate"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.generated.pdf"].waitForExistence(timeout: timeout))
     }
 
     private func assertPreviewContainsText(_ app: XCUIApplication, _ preview: XCUIElement, _ expected: String, file: StaticString = #filePath, line: UInt = #line) {
@@ -596,6 +828,23 @@ final class ResumeWizardUITests: XCTestCase {
         return element.waitForExistence(timeout: timeout)
     }
 
+    /// Scrolls in short, slow drags until the element exists and can be tapped. Slow drags don't
+    /// coast, so the Tasks search header and rows below the mascot and progress widgets aren't
+    /// flung past. If an element ends up above the middle of the screen, it drags back down.
+    private func revealHittable(_ element: XCUIElement, in app: XCUIApplication, steps: Int = 8) -> Bool {
+        let upper = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42))
+        let lower = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.68))
+        for _ in 0..<steps {
+            if element.waitForExistence(timeout: 1), element.isHittable { return true }
+            if element.exists, element.frame.midY < app.frame.midY * 0.5 {
+                upper.press(forDuration: 0.1, thenDragTo: lower, withVelocity: .slow, thenHoldForDuration: 0.3)
+            } else {
+                lower.press(forDuration: 0.1, thenDragTo: upper, withVelocity: .slow, thenHoldForDuration: 0.3)
+            }
+        }
+        return element.waitForExistence(timeout: timeout) && element.isHittable
+    }
+
     private func revealBelow(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
         for _ in 0..<5 {
             if element.waitForExistence(timeout: 2) { return true }
@@ -607,15 +856,16 @@ final class ResumeWizardUITests: XCTestCase {
     private func tapWhenHittable(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
         for _ in 0..<5 {
             if element.waitForExistence(timeout: 2) {
+                let back = app.buttons["wizard.back"]
+                if back.exists, !["wizard.back", "wizard.next", "wizard.generate", "wizard.save-resume", "wizard.edit-resume", "wizard.check-job-match", "wizard.start-over"].contains(element.identifier), element.frame.midY >= back.frame.minY - 12 {
+                    app.swipeUp()
+                    continue
+                }
                 if element.isHittable && element.isEnabled {
                     element.tap()
                     return true
                 }
                 dismissKeyboard(in: app)
-                if element.isHittable && element.isEnabled {
-                    element.tap()
-                    return true
-                }
             }
             app.swipeUp()
         }
@@ -634,13 +884,19 @@ final class ResumeWizardUITests: XCTestCase {
     }
 
     private func dismissKeyboard(in app: XCUIApplication) {
+        let wizardHide = app.buttons["wizard.hide-keyboard"]
+        if wizardHide.exists, wizardHide.isHittable { wizardHide.tap(); return }
         if app.keyboards.element.waitForExistence(timeout: 1) {
-            let hide = app.keyboards.buttons["Hide keyboard"]
-            if hide.waitForExistence(timeout: 1) { hide.tap(); return }
-            let done = app.keyboards.buttons["Done"]
-            if done.waitForExistence(timeout: 1) { done.tap(); return }
+            for name in ["Hide keyboard", "Done"] {
+                let key = app.keyboards.buttons[name]
+                guard key.waitForExistence(timeout: 1) else { continue }
+                // The iOS 27 iPad Simulator reports every keyboard key off screen and unhittable
+                // even while the keyboard is visible, so leave it up rather than tapping blind.
+                if key.isHittable { key.tap() }
+                return
+            }
         }
         let globalHide = app.buttons["Hide keyboard"]
-        if globalHide.waitForExistence(timeout: 1) { globalHide.tap() }
+        if globalHide.waitForExistence(timeout: 1), globalHide.isHittable { globalHide.tap() }
     }
 }

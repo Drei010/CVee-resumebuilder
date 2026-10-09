@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PDFKit
 
 enum ResumeSaveState: Equatable { case saved, saving, failed(String) }
 
@@ -9,6 +10,7 @@ struct StructuredResumeEditorView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var document: ResumeDocument
     @State private var mode = Mode.content
+    @State private var previewPDFData = Data()
     @State private var saveState: ResumeSaveState = .saved
     @State private var saveTask: Task<Void, Never>?
     @State private var undoStack: [ResumeDocument] = []
@@ -32,12 +34,17 @@ struct StructuredResumeEditorView: View {
                 .pickerStyle(.segmented).padding().accessibilityIdentifier("resume.editor-mode")
             if mode == .content { content } else { preview }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .frame(maxWidth: 760).frame(maxWidth: .infinity)
+        .background(CVeeColors.page)
         .navigationTitle(resume.name).navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .task { persistIfNeeded() }
+        .task(id: document) { previewPDFData = ResumeDocumentRenderer().pdfData(for: document) }
         .onChange(of: scenePhase) { _, phase in if phase == .background { flushSave() } }
         .onDisappear { flushSave() }
+        .onChange(of: saveState) { _, state in
+            if case .failed(let message) = state { UIAccessibility.post(notification: .announcement, argument: "Couldn’t save. \(message)") }
+        }
         .confirmationDialog("Delete section?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
             if let section = pendingDelete { Button("Delete \(section.title)", role: .destructive) { mutate { document.sections.removeAll { $0.id == section.id } }; pendingDelete = nil } }
         } message: { Text("Undo restores the deleted section during this editing session.") }
@@ -52,7 +59,7 @@ struct StructuredResumeEditorView: View {
     private var content: some View {
         List {
             Section {
-                TextField("Document name", text: Binding(get: { resume.name }, set: { resume.name = $0; changed() }))
+                LabeledContent("Document name") { TextField("Document name", text: Binding(get: { resume.name }, set: { resume.name = $0; changed() })) }
                 Button("Export resume", systemImage: "square.and.arrow.up") { showingExport = true }
                     .accessibilityIdentifier("resume.export")
                 Button("Import LaTeX text", systemImage: "doc.text") { showingImport = true }
@@ -79,7 +86,7 @@ struct StructuredResumeEditorView: View {
                     if let source = document.originalSource { DisclosureGroup("Original source") { Text(source).font(.system(.caption, design: .monospaced)).textSelection(.enabled) } }
                 }
             }
-        }.listStyle(.insetGrouped).scrollContentBackground(.hidden)
+        }.listStyle(.insetGrouped).modifier(WorkspaceSurface())
     }
 
     private func sectionRow(_ section: ResumeDocumentSection) -> some View {
@@ -88,7 +95,7 @@ struct StructuredResumeEditorView: View {
         } label: {
             HStack {
                 Image(systemName: section.isVisible ? "eye" : "eye.slash").foregroundStyle(.secondary)
-                TextField("Section title", text: sectionTitleBinding(section.id))
+                Text(section.title).font(.headline)
                 Spacer()
                 Button(section.isVisible ? "Hide" : "Show") { mutate { toggleVisibility(section.id, in: &document) } }.buttonStyle(.borderless)
             }
@@ -106,12 +113,18 @@ struct StructuredResumeEditorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 Text("\(pageCount) \(pageCount == 1 ? "page" : "pages") · target \(document.layout.targetPages)").font(.caption).foregroundStyle(.secondary)
-                ResumePagePreview(pdfData: ResumeDocumentRenderer().pdfData(for: document)).accessibilityIdentifier("resume.structured-preview")
+                ResumePagePreview(pdfData: previewPDFData)
+                    .accessibilityIdentifier("resume.structured-preview")
+                    .accessibilityValue(PDFDocument(data: previewPDFData)?.string ?? "")
             }.padding()
         }
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .keyboard) {
+            Spacer()
+            Button("Hide keyboard") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
+        }
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button("Undo") { undo() }.disabled(undoStack.isEmpty).accessibilityIdentifier("resume.undo")
             Button("Redo") { redo() }.disabled(redoStack.isEmpty).accessibilityIdentifier("resume.redo")
@@ -119,7 +132,7 @@ struct StructuredResumeEditorView: View {
     }
 
     private var saveStateText: String { switch saveState { case .saved: "Saved"; case .saving: "Saving"; case .failed: "Couldn't save — Retry" } }
-    private var pageCount: Int { ResumeDocumentRenderer().pageCount(for: document) }
+    private var pageCount: Int { PDFDocument(data: previewPDFData)?.pageCount ?? 0 }
     private func sectionBinding(_ id: UUID) -> Binding<ResumeDocumentSection> {
         Binding(get: { document.sections.first(where: { $0.id == id }) ?? ResumeDocumentSection(kind: .custom, title: "Section", content: .custom(CustomContent())) }, set: { value in mutate { if let index = document.sections.firstIndex(where: { $0.id == id }) { document.sections[index] = value } } })
     }
@@ -140,14 +153,25 @@ struct StructuredResumeEditorView: View {
     private func defaultContent(for kind: ResumeSectionKind) -> ResumeSectionContent { switch kind { case .header: .contact(ContactContent()); case .summary: .summary(""); case .experience: .experience([]); case .projects: .projects([]); case .education: .education([]); case .skills: .skills([]); case .certifications: .certifications([]); case .custom: .custom(CustomContent()) } }
     private func addEntry(to id: UUID) { mutate { guard let index = document.sections.firstIndex(where: { $0.id == id }) else { return }; switch document.sections[index].content { case .experience(var value): value.append(ExperienceEntry()); document.sections[index].content = .experience(value); case .projects(var value): value.append(ProjectEntry()); document.sections[index].content = .projects(value); case .education(var value): value.append(EducationEntry()); document.sections[index].content = .education(value); case .skills(var value): value.append(SkillCategory()); document.sections[index].content = .skills(value); case .certifications(var value): value.append(CertificationEntry()); document.sections[index].content = .certifications(value); case .custom(var value): value.paragraphs.append(""); document.sections[index].content = .custom(value); default: break } } }
     private func export(pdf: Bool) {
-        let service = ResumeExportService()
-        shareItems = pdf ? [ResumeDocumentRenderer().pdfData(for: document)] : [(try? service.rtfData(for: resume)) as Any].compactMap { $0 }
-        showShare = !shareItems.isEmpty
+        flushSave()
+        guard saveState == .saved else { return }
+        do {
+            shareItems = pdf ? [ResumeDocumentRenderer().pdfData(for: document)] : [try ResumeExportService().rtfData(for: resume)]
+            showShare = !shareItems.isEmpty
+        } catch { saveState = .failed(error.localizedDescription) }
     }
     private func createImportedCopy(_ imported: ResumeDocument) {
-        guard let data = try? imported.data() else { return }
-        let copy = Resume(name: "\(resume.name) — LaTeX import", jobTarget: resume.jobTarget, workExperienceIDs: resume.linkedWorkExperienceIDs, structuredDocumentData: data)
-        modelContext.insert(copy); try? modelContext.save()
+        var copy: Resume?
+        do {
+            let data = try imported.data()
+            let importedResume = Resume(name: "\(resume.name) — LaTeX import", jobTarget: resume.jobTarget, workExperienceIDs: resume.linkedWorkExperienceIDs, structuredDocumentData: data)
+            copy = importedResume
+            modelContext.insert(importedResume)
+            try modelContext.save()
+        } catch {
+            if let copy { modelContext.delete(copy) }
+            saveState = .failed(error.localizedDescription)
+        }
     }
 }
 
@@ -158,10 +182,11 @@ struct ResumeSectionForm: View {
     let onAdd: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack { Button("Move up", action: onMoveUp); Button("Move down", action: onMoveDown) }
+            VStack(alignment: .leading) { Button("Move up", action: onMoveUp); Button("Move down", action: onMoveDown) }
+            LabeledContent("Section title") { TextField("Section title", text: $section.title) }
             switch section.content {
             case .contact: ContactForm(content: contactBinding)
-            case .summary: TextEditor(text: summaryBinding).frame(minHeight: 100).overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.2)))
+            case .summary: Text("Summary").font(.caption).foregroundStyle(CVeeColors.secondary); TextEditor(text: summaryBinding).accessibilityLabel("Resume summary").frame(minHeight: 100).overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.2)))
             case .experience: experience
             case .projects: projects
             case .education: education
@@ -173,12 +198,12 @@ struct ResumeSectionForm: View {
     }
     private var contactBinding: Binding<ContactContent> { Binding(get: { if case .contact(let value) = section.content { return value }; return ContactContent() }, set: { section.content = .contact($0) }) }
     private var summaryBinding: Binding<String> { Binding(get: { if case .summary(let value) = section.content { return value }; return "" }, set: { section.content = .summary($0) }) }
-    private var experience: some View { Group { if case .experience(let entries) = section.content { ForEach(entries.indices, id: \.self) { index in ExperienceEntryForm(entry: experienceBinding(index)); HStack { Button("Move up") { moveEntry(index, by: -1) }.disabled(index == 0); Button("Move down") { moveEntry(index, by: 1) }.disabled(index == entries.count - 1); Button("Delete", role: .destructive) { deleteEntry(index) } } }; Button("Add experience", action: onAdd) } } }
-    private var projects: some View { Group { if case .projects(let entries) = section.content { ForEach(entries.indices, id: \.self) { index in ProjectEntryForm(entry: projectBinding(index)); HStack { Button("Move up") { moveEntry(index, by: -1) }; Button("Move down") { moveEntry(index, by: 1) }; Button("Delete", role: .destructive) { deleteEntry(index) } } }; Button("Add project", action: onAdd) } } }
+    private var experience: some View { Group { if case .experience(let entries) = section.content { ForEach(entries.indices, id: \.self) { index in ExperienceEntryForm(entry: experienceBinding(index)); VStack(alignment: .leading) { Button("Move up") { moveEntry(index, by: -1) }.disabled(index == 0); Button("Move down") { moveEntry(index, by: 1) }.disabled(index == entries.count - 1); Button("Delete", role: .destructive) { deleteEntry(index) } } }; Button("Add experience", action: onAdd) } } }
+    private var projects: some View { Group { if case .projects(let entries) = section.content { ForEach(entries.indices, id: \.self) { index in ProjectEntryForm(entry: projectBinding(index)); VStack(alignment: .leading) { Button("Move up") { moveEntry(index, by: -1) }; Button("Move down") { moveEntry(index, by: 1) }; Button("Delete", role: .destructive) { deleteEntry(index) } } }; Button("Add project", action: onAdd) } } }
     private var education: some View { Group { if case .education(let entries) = section.content { ForEach(entries.indices, id: \.self) { index in EducationEntryForm(entry: educationBinding(index)); Button("Delete", role: .destructive) { deleteEntry(index) } }; Button("Add education", action: onAdd) } } }
     private var skills: some View { Group { if case .skills(let entries) = section.content { ForEach(entries.indices, id: \.self) { index in SkillCategoryForm(category: skillBinding(index)); Button("Delete", role: .destructive) { deleteEntry(index) } }; Button("Add category", action: onAdd) } } }
     private var certifications: some View { Group { if case .certifications(let entries) = section.content { ForEach(entries.indices, id: \.self) { index in CertificationEntryForm(entry: certificationBinding(index)); Button("Delete", role: .destructive) { deleteEntry(index) } }; Button("Add certification", action: onAdd) } } }
-    private var custom: some View { Group { if case .custom(let value) = section.content { ForEach(value.paragraphs.indices, id: \.self) { index in TextEditor(text: customParagraphBinding(index)).frame(minHeight: 70) }; ForEach(value.bullets.indices, id: \.self) { index in HStack { TextField("Bullet", text: customBulletBinding(index)); Button("Delete", role: .destructive) { var copy = value; copy.bullets.remove(at: index); section.content = .custom(copy) } } }; Button("Add paragraph") { var copy = value; copy.paragraphs.append(""); section.content = .custom(copy) }; Button("Add bullet") { var copy = value; copy.bullets.append(ResumeBullet()); section.content = .custom(copy) } } } }
+    private var custom: some View { Group { if case .custom(let value) = section.content { ForEach(value.paragraphs.indices, id: \.self) { index in Text("Paragraph \(index + 1)").font(.caption).foregroundStyle(CVeeColors.secondary); TextEditor(text: customParagraphBinding(index)).frame(minHeight: 70).accessibilityLabel("Paragraph \(index + 1)") }; ForEach(value.bullets.indices, id: \.self) { index in HStack { ResumeTextField(label: "Achievement", text: customBulletBinding(index)); Button("Delete", role: .destructive) { var copy = value; copy.bullets.remove(at: index); section.content = .custom(copy) } } }; Button("Add paragraph") { var copy = value; copy.paragraphs.append(""); section.content = .custom(copy) }; Button("Add bullet") { var copy = value; copy.bullets.append(ResumeBullet()); section.content = .custom(copy) } } } }
     private func experienceBinding(_ index: Int) -> Binding<ExperienceEntry> { Binding(get: { if case .experience(let value) = section.content { return value[index] }; return ExperienceEntry() }, set: { if case .experience(var value) = section.content { value[index] = $0; section.content = .experience(value) } }) }
     private func projectBinding(_ index: Int) -> Binding<ProjectEntry> { Binding(get: { if case .projects(let value) = section.content { return value[index] }; return ProjectEntry() }, set: { if case .projects(var value) = section.content { value[index] = $0; section.content = .projects(value) } }) }
     private func educationBinding(_ index: Int) -> Binding<EducationEntry> { Binding(get: { if case .education(let value) = section.content { return value[index] }; return EducationEntry() }, set: { if case .education(var value) = section.content { value[index] = $0; section.content = .education(value) } }) }
@@ -190,12 +215,28 @@ struct ResumeSectionForm: View {
     private func deleteEntry(_ index: Int) { switch section.content { case .experience(var value): value.remove(at: index); section.content = .experience(value); case .projects(var value): value.remove(at: index); section.content = .projects(value); case .education(var value): value.remove(at: index); section.content = .education(value); case .skills(var value): value.remove(at: index); section.content = .skills(value); case .certifications(var value): value.remove(at: index); section.content = .certifications(value); default: break } }
 }
 
-struct ContactForm: View { @Binding var content: ContactContent; var body: some View { VStack { TextField("Name", text: $content.name); TextField("Email", text: $content.email); TextField("Phone", text: $content.phone); TextField("Location", text: $content.location); ForEach(content.links.indices, id: \.self) { index in HStack { TextField("Label", text: $content.links[index].label); TextField("URL", text: $content.links[index].url); Button("Delete", role: .destructive) { content.links.remove(at: index) } } }; Button("Add link") { content.links.append(LabeledLink()) } } } }
-struct ExperienceEntryForm: View { @Binding var entry: ExperienceEntry; var body: some View { VStack(alignment: .leading) { TextField("Role", text: $entry.role); TextField("Employer", text: $entry.employer); TextField("Location", text: $entry.location); TextField("Dates", text: $entry.dates); ForEach(entry.bullets.indices, id: \.self) { index in HStack { TextField("Achievement", text: $entry.bullets[index].text); Button("Delete", role: .destructive) { entry.bullets.remove(at: index) } } }; Button("Add achievement") { entry.bullets.append(ResumeBullet()) } } } }
-struct ProjectEntryForm: View { @Binding var entry: ProjectEntry; var body: some View { VStack { TextField("Name", text: $entry.name); TextField("Description", text: $entry.description); TextField("Technologies", text: $entry.technologies); TextField("Link", text: $entry.link); ForEach(entry.bullets.indices, id: \.self) { index in HStack { TextField("Achievement", text: $entry.bullets[index].text); Button("Delete", role: .destructive) { entry.bullets.remove(at: index) } } }; Button("Add achievement") { entry.bullets.append(ResumeBullet()) } } } }
-struct EducationEntryForm: View { @Binding var entry: EducationEntry; var body: some View { VStack { TextField("Institution", text: $entry.institution); TextField("Qualification", text: $entry.qualification); TextField("Location", text: $entry.location); TextField("Dates", text: $entry.dates); TextField("Honors", text: $entry.honors) } } }
-struct SkillCategoryForm: View { @Binding var category: SkillCategory; var body: some View { VStack { TextField("Category", text: $category.name); TextField("Skills, comma separated", text: Binding(get: { category.items.joined(separator: ", ") }, set: { category.items = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } })) } } }
-struct CertificationEntryForm: View { @Binding var entry: CertificationEntry; var body: some View { VStack { TextField("Name", text: $entry.name); TextField("Issuer", text: $entry.issuer); TextField("Date", text: $entry.date); TextField("Credential link", text: $entry.credentialLink) } } }
+private struct ResumeTextField: View {
+    let label: String
+    @Binding var text: String
+    var keyboard: UIKeyboardType = .default
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.caption).foregroundStyle(CVeeColors.secondary)
+            TextField(label, text: $text, axis: .vertical)
+                .keyboardType(keyboard)
+                .textInputAutocapitalization(keyboard == .emailAddress || keyboard == .URL ? .never : .sentences)
+                .autocorrectionDisabled(keyboard == .emailAddress || keyboard == .URL)
+                .lineLimit(1...6)
+        }
+    }
+}
+
+struct ContactForm: View { @Binding var content: ContactContent; var body: some View { VStack { ResumeTextField(label: "Name", text: $content.name); ResumeTextField(label: "Email", text: $content.email, keyboard: .emailAddress); ResumeTextField(label: "Phone", text: $content.phone, keyboard: .phonePad); ResumeTextField(label: "Location or other contact details", text: $content.location); ForEach(content.links.indices, id: \.self) { index in HStack { ResumeTextField(label: "Label", text: $content.links[index].label); ResumeTextField(label: "URL", text: $content.links[index].url, keyboard: .URL); Button("Delete", role: .destructive) { content.links.remove(at: index) } } }; Button("Add link") { content.links.append(LabeledLink()) } } } }
+struct ExperienceEntryForm: View { @Binding var entry: ExperienceEntry; var body: some View { VStack(alignment: .leading) { ResumeTextField(label: "Role", text: $entry.role); ResumeTextField(label: "Employer", text: $entry.employer); ResumeTextField(label: "Location", text: $entry.location); ResumeTextField(label: "Dates", text: $entry.dates); ForEach(entry.bullets.indices, id: \.self) { index in HStack { ResumeTextField(label: "Achievement", text: $entry.bullets[index].text); Button("Delete", role: .destructive) { entry.bullets.remove(at: index) } } }; Button("Add achievement") { entry.bullets.append(ResumeBullet()) } } } }
+struct ProjectEntryForm: View { @Binding var entry: ProjectEntry; var body: some View { VStack { ResumeTextField(label: "Name", text: $entry.name); ResumeTextField(label: "Description", text: $entry.description); ResumeTextField(label: "Technologies", text: $entry.technologies); ResumeTextField(label: "Link", text: $entry.link, keyboard: .URL); ForEach(entry.bullets.indices, id: \.self) { index in HStack { ResumeTextField(label: "Achievement", text: $entry.bullets[index].text); Button("Delete", role: .destructive) { entry.bullets.remove(at: index) } } }; Button("Add achievement") { entry.bullets.append(ResumeBullet()) } } } }
+struct EducationEntryForm: View { @Binding var entry: EducationEntry; var body: some View { VStack { ResumeTextField(label: "Institution", text: $entry.institution); ResumeTextField(label: "Qualification", text: $entry.qualification); ResumeTextField(label: "Location", text: $entry.location); ResumeTextField(label: "Dates", text: $entry.dates); ResumeTextField(label: "Honors", text: $entry.honors) } } }
+struct SkillCategoryForm: View { @Binding var category: SkillCategory; var body: some View { VStack { ResumeTextField(label: "Category", text: $category.name); ResumeTextField(label: "Skills, comma separated", text: Binding(get: { category.items.joined(separator: ", ") }, set: { category.items = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } })) } } }
+struct CertificationEntryForm: View { @Binding var entry: CertificationEntry; var body: some View { VStack { ResumeTextField(label: "Name", text: $entry.name); ResumeTextField(label: "Issuer", text: $entry.issuer); ResumeTextField(label: "Date", text: $entry.date); ResumeTextField(label: "Credential link", text: $entry.credentialLink, keyboard: .URL) } } }
 
 struct LaTeXImportSheet: View {
     @Environment(\.dismiss) private var dismiss

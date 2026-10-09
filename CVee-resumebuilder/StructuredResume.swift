@@ -180,28 +180,32 @@ enum ResumeDocumentConverter {
     }
 
     static func document(from text: String, name: String = "Untitled resume") -> ResumeDocument {
-        let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         var sections: [ResumeDocumentSection] = []
         var contact = ContactContent(name: lines.first ?? name)
-        if lines.count > 1, !isHeading(lines[1]) { contact.email = lines[1].components(separatedBy: "|").first?.trimmingCharacters(in: .whitespaces) ?? "" }
+        var bodyStart = 1
+        if lines.count > 1, !isHeading(lines[1]), lines[1].contains("@") || lines[1].contains("|") {
+            let details = lines[1].components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+            contact.email = details.first(where: { $0.contains("@") }) ?? ""
+            contact.location = details.filter { $0 != contact.email }.joined(separator: " | ")
+            bodyStart = 2
+        }
         sections.append(ResumeDocumentSection(kind: .header, title: "Contact", content: .contact(contact)))
 
         var currentKind: ResumeSectionKind?
         var currentTitle = ""
         var currentLines: [String] = []
         func flush() {
-            guard let currentKind, !currentLines.isEmpty else { return }
-            sections.append(section(kind: currentKind, title: currentTitle, lines: currentLines))
+            guard !currentLines.isEmpty else { return }
+            sections.append(section(kind: currentKind ?? .custom, title: currentKind == nil ? "Review placement" : currentTitle, lines: currentLines))
             currentLines.removeAll()
         }
-        for line in lines.dropFirst(contact.email.isEmpty ? 1 : 2) {
+        for line in lines.dropFirst(bodyStart) {
             if let kind = headingKind(line) { flush(); currentKind = kind; currentTitle = kind == .custom ? line : kind.title }
             else if !line.isEmpty { currentLines.append(line) }
         }
         flush()
-        if sections.count == 1 {
-            sections.append(ResumeDocumentSection(kind: .custom, title: "Review placement", content: .custom(CustomContent(paragraphs: [text]))))
-        }
+
         return ResumeDocument(sections: sections, originalSource: text, conversionNotes: ["Review the proposed section placement before exporting."])
     }
 
@@ -210,9 +214,9 @@ enum ResumeDocumentConverter {
         case .header: return ResumeDocumentSection(kind: .header, title: "Contact", content: .contact(ContactContent()))
         case .summary: return ResumeDocumentSection(kind: .summary, title: title, content: .summary(lines.joined(separator: " ")))
         case .experience: return ResumeDocumentSection(kind: .experience, title: title, content: .experience(entries(from: lines)))
-        case .projects: return ResumeDocumentSection(kind: .projects, title: title, content: .projects([ProjectEntry(name: lines.first ?? "", bullets: bullets(from: Array(lines.dropFirst()))) ]))
+        case .projects: return ResumeDocumentSection(kind: .projects, title: title, content: .projects([ProjectEntry(name: lines.first ?? "", description: lines.dropFirst().filter { !$0.hasPrefix("•") && !$0.hasPrefix("-") }.joined(separator: "\n"), bullets: bullets(from: Array(lines.dropFirst()))) ]))
         case .education: return ResumeDocumentSection(kind: .education, title: title, content: .education([EducationEntry(institution: lines.first ?? "", qualification: lines.dropFirst().first ?? "", honors: lines.dropFirst(2).joined(separator: " "))]))
-        case .skills: return ResumeDocumentSection(kind: .skills, title: title, content: .skills(lines.map { line in let parts = line.split(separator: ":", maxSplits: 1).map(String.init); return SkillCategory(name: parts.first ?? "Skills", items: parts.dropFirst().first?.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } ?? []) }))
+        case .skills: return ResumeDocumentSection(kind: .skills, title: title, content: .skills(lines.map { line in let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init); return parts.count == 1 ? SkillCategory(items: line.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) : SkillCategory(name: parts[0], items: parts[1].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }))
         case .certifications: return ResumeDocumentSection(kind: .certifications, title: title, content: .certifications(lines.map { CertificationEntry(name: $0) }))
         case .custom: return ResumeDocumentSection(kind: .custom, title: title, content: .custom(CustomContent(paragraphs: lines.filter { !$0.hasPrefix("•") && !$0.hasPrefix("-") }, bullets: bullets(from: lines))))
         }
@@ -224,6 +228,8 @@ enum ResumeDocumentConverter {
             if line.hasPrefix("•") || line.hasPrefix("-") {
                 if result.isEmpty { result.append(ExperienceEntry()) }
                 result[result.count - 1].bullets.append(ResumeBullet(text: line.trimmingCharacters(in: CharacterSet(charactersIn: "•- "))))
+            } else if !result.isEmpty && !line.contains("|") {
+                result[result.count - 1].bullets.append(ResumeBullet(text: line))
             } else {
                 let parts = line.components(separatedBy: "|")
                 result.append(ExperienceEntry(role: parts.first?.trimmingCharacters(in: .whitespaces) ?? line, employer: parts.dropFirst().first?.trimmingCharacters(in: .whitespaces) ?? "", dates: parts.dropFirst(2).joined(separator: "|").trimmingCharacters(in: .whitespaces), bullets: []))
@@ -269,7 +275,9 @@ struct ResumeDocumentRenderer {
             case .education(let entries): for entry in entries { appendEntry(entry.qualification, detail: [entry.institution, entry.location, entry.dates, entry.honors].filter { !$0.isEmpty }.joined(separator: " · "), bullets: [], font: body, to: result) }
             case .skills(let categories): for category in categories { append(category.name.isEmpty ? category.items.joined(separator: ", ") : "\(category.name): \(category.items.joined(separator: ", "))", font: body, spacing: 3, to: result) }
             case .certifications(let entries): for entry in entries { append([entry.name, entry.issuer, entry.date].filter { !$0.isEmpty }.joined(separator: " · "), font: body, spacing: 3, to: result) }
-            case .custom(let custom): for paragraph in custom.paragraphs { append(paragraph, font: body, spacing: 4, to: result); for bullet in custom.bullets { append("• \(bullet.text)", font: body, hanging: true, to: result) } }
+            case .custom(let custom):
+                for paragraph in custom.paragraphs { append(paragraph, font: body, spacing: 4, to: result) }
+                for bullet in custom.bullets { append("• \(bullet.text)", font: body, hanging: true, to: result) }
             case .contact: break
             }
         }

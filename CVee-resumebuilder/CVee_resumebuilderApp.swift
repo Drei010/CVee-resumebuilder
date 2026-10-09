@@ -31,6 +31,7 @@ struct CVee_resumebuilderApp: App {
                 "Delivered annual cost savings by developing TypeScript data-processing tools to automate reporting workflows."
             ])
             let job = JobTarget(sourceType: .pastedText, rawText: "Full Stack AI Developer role requiring Python, TypeScript, React, and AI application development.", parsedTitle: "Full Stack AI Developer", parsedCompany: "Accenture Philippines")
+            if ProcessInfo.processInfo.arguments.contains("-ui-testing-unreviewed-job") { job.captureReviewState = .needsReview }
             var document = ResumeDocument.empty
             document.sections[0].content = .contact(ContactContent(name: "Andrei Hidalgo", email: "test@example.com"))
             let resume = Resume(name: "Fixture Resume", jobTarget: job, structuredDocumentData: try? document.data())
