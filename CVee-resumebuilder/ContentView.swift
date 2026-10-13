@@ -92,6 +92,120 @@ private struct SelectionCircle: View {
     }
 }
 
+/// The search card shared by Tasks and Saved Jobs: one full-width card-surface field with a search
+/// icon, a clear button while text is entered, and a filter menu whose icon turns action ink while a
+/// filter is active. Active filters show below the field as removable chips; there is no result count.
+/// It heads a plain list section, so it stays pinned while the list scrolls beneath it. Identifiers
+/// are `<prefix>.search`, `<prefix>.search.clear`, `<prefix>.filter`, and `<prefix>.search-bar`.
+private struct LibrarySearchBar<FilterMenu: View, Chips: View>: View {
+    @Binding var text: String
+    let prompt: LocalizedStringKey
+    let clearLabel: LocalizedStringKey
+    let filterLabel: LocalizedStringKey
+    let filterValue: String
+    let isFiltering: Bool
+    let identifierPrefix: String
+    let filterMenu: FilterMenu
+    let chips: Chips
+
+    init(text: Binding<String>, prompt: LocalizedStringKey, clearLabel: LocalizedStringKey,
+         filterLabel: LocalizedStringKey, filterValue: String, isFiltering: Bool, identifierPrefix: String,
+         @ViewBuilder filterMenu: () -> FilterMenu, @ViewBuilder chips: () -> Chips) {
+        _text = text
+        self.prompt = prompt
+        self.clearLabel = clearLabel
+        self.filterLabel = filterLabel
+        self.filterValue = filterValue
+        self.isFiltering = isFiltering
+        self.identifierPrefix = identifierPrefix
+        self.filterMenu = filterMenu()
+        self.chips = chips()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(CVeeColors.secondary)
+                    .accessibilityHidden(true)
+                TextField(prompt, text: $text)
+                    .textFieldStyle(.plain)
+                    .accessibilityIdentifier("\(identifierPrefix).search")
+                if !text.isEmpty {
+                    Button {
+                        text = ""
+                    } label: {
+                        // The frame and shape sit inside the label so the whole 44-point square takes taps.
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(CVeeColors.secondary)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(clearLabel)
+                    .accessibilityIdentifier("\(identifierPrefix).search.clear")
+                }
+                Menu {
+                    filterMenu
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .foregroundStyle(isFiltering ? CVeeColors.actionInk : CVeeColors.secondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(filterLabel)
+                .accessibilityValue(filterValue)
+                .accessibilityIdentifier("\(identifierPrefix).filter")
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 4)
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(CVeeColors.card, in: RoundedRectangle(cornerRadius: 12))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("\(identifierPrefix).search-bar")
+
+            chips
+        }
+        .textCase(nil)
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(CVeeColors.page)
+    }
+}
+
+/// A removable active-filter chip below the search card: the metadata capsule's tint, ink, and type
+/// plus an xmark, with a 44-point target. Tapping it clears that filter.
+private struct ActiveFilterChip: View {
+    let title: String
+    let removeLabel: LocalizedStringKey
+    let identifier: String
+    let remove: () -> Void
+
+    var body: some View {
+        Button {
+            remove()
+        } label: {
+            Label(title, systemImage: "xmark")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(CVeeColors.objectInk)
+                .lineLimit(2)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(CVeeColors.objectTint.opacity(0.16), in: Capsule())
+                // Inside the label so the whole 44-point height takes taps, not just the capsule.
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(removeLabel)
+        .accessibilityValue(title)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -789,73 +903,21 @@ struct WorkHistoryView: View {
 
     /// One full-width search field; an active company filter shows as a removable chip below it.
     private var taskSearchBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(CVeeColors.secondary)
-                    .accessibilityHidden(true)
-                TextField("Search tasks", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .accessibilityIdentifier("tasks.search")
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(CVeeColors.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear task search")
-                    .frame(minWidth: 44, minHeight: 44)
-                    .accessibilityIdentifier("tasks.search.clear")
-                }
-                Menu {
-                    Button("All companies") { selectedCompany = "All companies" }
-                    ForEach(companies, id: \.self) { company in
-                        Button(company) { selectedCompany = company }
-                    }
-                } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .foregroundStyle(selectedCompany == "All companies" ? CVeeColors.secondary : CVeeColors.actionInk)
-                }
-                .accessibilityLabel("Filter tasks by company")
-                .accessibilityValue(selectedCompany)
-                .frame(minWidth: 44, minHeight: 44)
-                .accessibilityIdentifier("tasks.filter")
+        LibrarySearchBar(text: $searchText, prompt: "Search tasks", clearLabel: "Clear task search",
+                         filterLabel: "Filter tasks by company", filterValue: selectedCompany,
+                         isFiltering: selectedCompany != "All companies", identifierPrefix: "tasks") {
+            Button("All companies") { selectedCompany = "All companies" }
+            ForEach(companies, id: \.self) { company in
+                Button(company) { selectedCompany = company }
             }
-            .padding(.leading, 12)
-            .padding(.trailing, 4)
-            .padding(.vertical, 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(CVeeColors.card, in: RoundedRectangle(cornerRadius: 12))
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("tasks.search-bar")
-
+        } chips: {
             if selectedCompany != "All companies" {
-                Button {
+                ActiveFilterChip(title: selectedCompany, removeLabel: "Remove company filter",
+                                 identifier: "tasks.active-company-filter") {
                     selectedCompany = "All companies"
-                } label: {
-                    Label(selectedCompany, systemImage: "xmark")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(CVeeColors.objectInk)
-                        .lineLimit(2)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(CVeeColors.objectTint.opacity(0.16), in: Capsule())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Remove company filter")
-                .accessibilityValue(selectedCompany)
-                .frame(minHeight: 44)
-                .accessibilityIdentifier("tasks.active-company-filter")
             }
         }
-        .textCase(nil)
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(CVeeColors.page)
     }
 
     var body: some View {
@@ -870,32 +932,12 @@ struct WorkHistoryView: View {
             .listRowSeparator(.hidden)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: greeting.mood)
 
+            // The search card follows the widgets directly (Import tasks lives in the Task actions
+            // menu). Its own 4-point top padding completes the 12-point gap every card here keeps.
             TaskMetricsSection(snapshot: metricsSnapshot)
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 12, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 8, trailing: 16))
                 .listRowBackground(CVeeColors.page)
                 .listRowSeparator(.hidden)
-
-            Button {
-                showingImport = true
-            } label: {
-                HStack {
-                    Label("Import tasks", systemImage: "arrow.down.document")
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(CVeeColors.ink)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(CVeeColors.card, in: RoundedRectangle(cornerRadius: 12))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("tasks.import")
-            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 12, trailing: 16))
-            .listRowBackground(CVeeColors.page)
-            .listRowSeparator(.hidden)
 
             Section {
                 if filteredExperiences.isEmpty {
@@ -1005,6 +1047,12 @@ struct WorkHistoryView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("Add manually") { showingAddTask = true }
+                    Button {
+                        showingImport = true
+                    } label: {
+                        Label("Import tasks", systemImage: "arrow.down.document")
+                    }
+                    .accessibilityIdentifier("tasks.import")
                     if hasCaptureDraft {
                         Button("Discard draft", role: .destructive) { showingDiscardDraftAlert = true }
                             .accessibilityIdentifier("tasks.discard-draft")
@@ -1493,6 +1541,8 @@ struct SavedJobsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \JobTarget.createdAt, order: .reverse) private var jobs: [JobTarget]
     @State private var searchText = ""
+    @State private var selectedCompany = "All companies"
+    @State private var selectedStatus = "All statuses"
     @State private var showingAddJob = false
     @State private var selectedJob: JobTarget?
     @State private var pendingDeletion: [JobTarget] = []
@@ -1500,19 +1550,33 @@ struct SavedJobsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let onOpenTasks: () -> Void
 
+    /// The row statuses, in the order the filter menu lists them; see `jobStatus(for:)`.
+    private static let statuses = ["Ready for resume", "Needs review", "Needs description"]
+
     init(onOpenTasks: @escaping () -> Void = {}) {
         self.onOpenTasks = onOpenTasks
     }
 
+    private var companies: [String] {
+        Array(Set(jobs.map(\.displayCompany))).sorted()
+    }
+
     private var filteredJobs: [JobTarget] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return jobs }
         return jobs.filter { job in
-            [job.parsedTitle, job.parsedCompany, job.rawText]
+            let matchesCompany = selectedCompany == "All companies" || job.displayCompany == selectedCompany
+            let matchesStatus = selectedStatus == "All statuses" || jobStatus(for: job) == selectedStatus
+            let matchesSearch = query.isEmpty || [job.parsedTitle, job.parsedCompany, job.rawText]
                 .compactMap { $0 }
                 .joined(separator: " ")
                 .localizedCaseInsensitiveContains(query)
+            return matchesCompany && matchesStatus && matchesSearch
         }
+    }
+
+    private var hasJobFilters: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        selectedCompany != "All companies" || selectedStatus != "All statuses"
     }
 
     /// The mascot's line: a nudge to save the first job, then how many saved jobs are ready for
@@ -1538,47 +1602,108 @@ struct SavedJobsView: View {
         return (.wink, title, "\(ready) of \(count) are ready for a resume. Open the others to add a description or review them.")
     }
 
-    /// Hidden while searching so results start at the top.
-    private var showsMascot: Bool {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    /// The same search card as Tasks. Its filter menu narrows by company and by each row's status,
+    /// and every active filter shows as its own removable chip.
+    private var jobSearchBar: some View {
+        LibrarySearchBar(text: $searchText, prompt: "Search saved jobs", clearLabel: "Clear job search",
+                         filterLabel: "Filter saved jobs", filterValue: "\(selectedCompany), \(selectedStatus)",
+                         isFiltering: selectedCompany != "All companies" || selectedStatus != "All statuses",
+                         identifierPrefix: "jobs") {
+            Section("Company") {
+                Button("All companies") { selectedCompany = "All companies" }
+                ForEach(companies, id: \.self) { company in
+                    Button(company) { selectedCompany = company }
+                }
+            }
+            Section("Status") {
+                Button("All statuses") { selectedStatus = "All statuses" }
+                ForEach(Self.statuses, id: \.self) { status in
+                    Button(status) { selectedStatus = status }
+                }
+            }
+        } chips: {
+            if selectedCompany != "All companies" || selectedStatus != "All statuses" {
+                // Side by side when both fit; stacked when a long company or large text needs the width.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { jobFilterChips }
+                    VStack(alignment: .leading, spacing: 0) { jobFilterChips }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var jobFilterChips: some View {
+        if selectedCompany != "All companies" {
+            ActiveFilterChip(title: selectedCompany, removeLabel: "Remove company filter",
+                             identifier: "jobs.active-company-filter") {
+                selectedCompany = "All companies"
+            }
+        }
+        if selectedStatus != "All statuses" {
+            ActiveFilterChip(title: selectedStatus, removeLabel: "Remove status filter",
+                             identifier: "jobs.active-status-filter") {
+                selectedStatus = "All statuses"
+            }
+        }
+    }
+
+    /// With no jobs the mascot above already says what to do, so only the title and Add job remain;
+    /// with no matches it offers a way back.
+    private var jobsEmptyState: some View {
+        ContentUnavailableView {
+            Label(jobs.isEmpty ? "No saved jobs" : "No matching jobs", systemImage: "bookmark")
+        } description: {
+            if !jobs.isEmpty {
+                Text("Try another search or filter to find your saved jobs.")
+            }
+        } actions: {
+            if jobs.isEmpty { Button("Add job") { showingAddJob = true }.buttonStyle(CoralButtonStyle()) }
+            else if hasJobFilters {
+                Button("Clear search and filters") { clearJobFilters() }
+                    .accessibilityIdentifier("jobs.clear-filters")
+            }
+        }
     }
 
     var body: some View {
         List {
-            if showsMascot {
-                let greeting = mascotGreeting
-                MascotSpeechBubble(mood: greeting.mood, title: greeting.title, message: greeting.message,
-                                   accessibilityID: "jobs.mascot", mascotSize: MascotMetrics.prominentSize)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 12))
-                    .listRowBackground(CVeeColors.page)
-                    .listRowSeparator(.hidden)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: greeting.mood)
-            }
-            if filteredJobs.isEmpty {
-                ContentUnavailableView {
-                    Label(jobs.isEmpty ? "No saved jobs" : "No matching jobs", systemImage: "bookmark")
-                } description: {
-                    // With no jobs the mascot above already says what to do; keep only the title and action.
-                    if !(jobs.isEmpty && showsMascot) {
-                        Text(jobs.isEmpty ? "Add a job description to tailor your next resume." : "Try another search to find your saved jobs.")
+            // Always shown, including while searching or filtering, so the search card below it never
+            // jumps while typing. With jobs the 8-point inset is for the search card: as on Tasks, its
+            // 4-point top padding completes a 12-point gap. With none, the empty state follows directly.
+            let greeting = mascotGreeting
+            MascotSpeechBubble(mood: greeting.mood, title: greeting.title, message: greeting.message,
+                               accessibilityID: "jobs.mascot", mascotSize: MascotMetrics.prominentSize)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: jobs.isEmpty ? 12 : 8, trailing: 12))
+                .listRowBackground(CVeeColors.page)
+                .listRowSeparator(.hidden)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: greeting.mood)
+
+            if jobs.isEmpty {
+                // Nothing to search yet, so first use goes straight from the mascot to the empty state.
+                jobsEmptyState
+            } else {
+                Section {
+                    if filteredJobs.isEmpty { jobsEmptyState }
+                    let captured = filteredJobs.filter { $0.captureID != nil }
+                    let saved = filteredJobs.filter { $0.captureID == nil }
+                    if !captured.isEmpty {
+                        Section("Captured jobs") {
+                            ForEach(captured) { jobRow($0) }
+                                .onDelete { delete($0, from: captured) }
+                        }
                     }
-                } actions: {
-                    if jobs.isEmpty { Button("Add job") { showingAddJob = true }.buttonStyle(CoralButtonStyle()) }
-                    else { Button("Clear search") { searchText = "" } }
-                }
-            }
-            let captured = filteredJobs.filter { $0.captureID != nil }
-            let saved = filteredJobs.filter { $0.captureID == nil }
-            if !captured.isEmpty {
-                Section("Captured jobs") {
-                    ForEach(captured) { jobRow($0) }
-                        .onDelete { delete($0, from: captured) }
-                }
-            }
-            if !saved.isEmpty {
-                Section("Saved jobs") {
-                    ForEach(saved) { jobRow($0) }
-                        .onDelete { delete($0, from: saved) }
+                    if !saved.isEmpty {
+                        Section("Saved jobs") {
+                            ForEach(saved) { jobRow($0) }
+                                .onDelete { delete($0, from: saved) }
+                        }
+                    }
+                } header: {
+                    // As on Tasks: zero the plain-list header insets so the card's 16-point margins line
+                    // up with the bubble above, and the card stays pinned while the jobs scroll beneath it.
+                    jobSearchBar
+                        .listRowInsets(EdgeInsets())
                 }
             }
         }
@@ -1586,7 +1711,6 @@ struct SavedJobsView: View {
         .frame(maxWidth: 760)
         .frame(maxWidth: .infinity)
         .navigationTitle("Saved Jobs")
-        .searchable(text: $searchText, prompt: "Search saved jobs")
         .scrollContentBackground(.hidden)
         .background(CVeeColors.page)
         .toolbar {
@@ -1604,9 +1728,17 @@ struct SavedJobsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .cveeOpenJob)) { note in
             if let id = note.object as? UUID { selectedJob = jobs.first { $0.id == id } }
         }
+        // Deleting the last job hides the search card, so don't leave a hidden search or filter behind.
+        .onChange(of: jobs.isEmpty) { _, isEmpty in if isEmpty { clearJobFilters() } }
         .alert("Couldn’t save changes", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button("OK", role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "Try again.") }
+    }
+
+    private func clearJobFilters() {
+        searchText = ""
+        selectedCompany = "All companies"
+        selectedStatus = "All statuses"
     }
 
     private func jobStatus(for job: JobTarget) -> String {

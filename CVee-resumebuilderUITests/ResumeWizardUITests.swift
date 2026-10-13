@@ -352,8 +352,13 @@ final class ResumeWizardUITests: XCTestCase {
         task.tap()
         XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: timeout))
         app.buttons["Done"].tap()
-        XCTAssertTrue(app.buttons["tasks.import"].waitForExistence(timeout: timeout))
-        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.import"], in: app))
+        // Import tasks is an item in the Task actions menu, not a row in the list.
+        let importTasks = app.buttons["tasks.import"]
+        XCTAssertFalse(importTasks.exists)
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.actions"], in: app))
+        XCTAssertTrue(importTasks.waitForExistence(timeout: timeout))
+        capture(app, "tasks-actions-menu-with-tasks")
+        importTasks.tap()
         XCTAssertTrue(app.buttons["import.choose-document"].waitForExistence(timeout: timeout))
         app.buttons["Cancel"].tap()
         selectTab("Profile", in: app)
@@ -365,6 +370,32 @@ final class ResumeWizardUITests: XCTestCase {
         app.buttons["Cancel"].tap()
         selectTab("Tasks", in: app)
         XCTAssertTrue(revealHittable(task, in: app))
+    }
+
+    func testTaskImportOpensFromActionsMenu() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+
+        // The search card now follows the progress widgets directly, with no Import tasks row between.
+        XCTAssertTrue(revealHittable(app.textFields["tasks.search"], in: app))
+        let importTasks = app.buttons["tasks.import"]
+        XCTAssertFalse(importTasks.exists)
+        XCTAssertFalse(app.buttons["Import tasks"].exists)
+
+        let actions = app.buttons["tasks.actions"]
+        XCTAssertTrue(actions.waitForExistence(timeout: timeout))
+        actions.tap()
+        let addManually = app.buttons["Add manually"]
+        XCTAssertTrue(addManually.waitForExistence(timeout: timeout))
+        XCTAssertTrue(importTasks.waitForExistence(timeout: timeout))
+        // Add manually, then Import tasks.
+        XCTAssertLessThan(addManually.frame.midY, importTasks.frame.midY)
+        capture(app, "tasks-actions-menu")
+        importTasks.tap()
+        XCTAssertTrue(app.buttons["import.choose-document"].waitForExistence(timeout: timeout))
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(waitForDisappearance(app.buttons["import.choose-document"]))
     }
 
     func testDarkLargeTextTaskLayout() {
@@ -419,16 +450,23 @@ final class ResumeWizardUITests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-mock-data"]
         app.launch()
 
+        // The quick capture card nests inside the mascot row, so its frame is the card itself rather
+        // than the whole list cell; read its edges before any scrolling can move it off screen.
+        let captureCard = app.buttons["tasks.capture-card"]
+        XCTAssertTrue(captureCard.waitForExistence(timeout: timeout))
+        let cardFrame = captureCard.frame
         let search = app.textFields["tasks.search"]
         XCTAssertTrue(revealHittable(search, in: app))
+        capture(app, "tasks-search-under-progress")
         XCTAssertFalse(app.descendants(matching: .any)["tasks.result-count"].exists)
         let searchBar = app.descendants(matching: .any).matching(identifier: "tasks.search-bar").firstMatch
         XCTAssertTrue(searchBar.waitForExistence(timeout: timeout))
-        // Same 16-point side margins as the cards above it. A card row's own accessibility frame
-        // spans the whole list cell, so measure against the window rather than a card.
+        // Same 16-point side margins as the cards above it, so its edges line up with the capture card.
         let window = app.windows.firstMatch.frame
         XCTAssertEqual(searchBar.frame.minX - window.minX, 16, accuracy: 1)
         XCTAssertEqual(window.maxX - searchBar.frame.maxX, 16, accuracy: 1)
+        XCTAssertEqual(searchBar.frame.minX, cardFrame.minX, accuracy: 1)
+        XCTAssertEqual(searchBar.frame.maxX, cardFrame.maxX, accuracy: 1)
         // Scroll so the pinned search header and the task list show together.
         app.swipeUp()
         XCTAssertTrue(revealHittable(search, in: app))
@@ -449,6 +487,9 @@ final class ResumeWizardUITests: XCTestCase {
         let mascot = app.descendants(matching: .any)["jobs.mascot"]
         XCTAssertTrue(mascot.waitForExistence(timeout: timeout))
         XCTAssertTrue(mascot.label.contains("Save a job you want to land"))
+        // With no saved jobs there is nothing to search: the mascot leads straight into the empty state.
+        XCTAssertTrue(app.buttons["Add job"].waitForExistence(timeout: timeout))
+        XCTAssertFalse(app.textFields["jobs.search"].exists)
         capture(app, "saved-jobs-mascot-empty")
         app.terminate()
 
@@ -457,15 +498,73 @@ final class ResumeWizardUITests: XCTestCase {
         selectTab("Saved Jobs", in: app)
         XCTAssertTrue(mascot.waitForExistence(timeout: timeout))
         XCTAssertTrue(mascot.label.contains("saved job"))
+
+        // The search card sits in the list directly below the mascot, with no pull-down to reveal it.
+        let search = app.textFields["jobs.search"]
+        let searchBar = app.descendants(matching: .any).matching(identifier: "jobs.search-bar").firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: timeout))
+        XCTAssertTrue(searchBar.waitForExistence(timeout: timeout))
+        XCTAssertFalse(app.searchFields.firstMatch.exists)
+        XCTAssertLessThanOrEqual(mascot.frame.maxY, searchBar.frame.minY + 1)
+        // Record where both sit while fully on screen, so typing can be checked for any movement.
+        let window = app.windows.firstMatch.frame
+        XCTAssertTrue(window.contains(mascot.frame))
+        let mascotTop = mascot.frame.minY
+        let barTop = searchBar.frame.minY
         capture(app, "saved-jobs-mascot")
 
-        let search = app.searchFields.firstMatch
-        // Newer iOS keeps the search bar tucked under the large title until the list is pulled down.
-        if !search.waitForExistence(timeout: 2) { app.swipeDown() }
-        XCTAssertTrue(search.waitForExistence(timeout: timeout))
+        // The mascot stays put and on screen while searching, so the field never jumps under the finger.
         search.tap(); search.typeText("NO_MATCH_SENTINEL")
         XCTAssertTrue(app.staticTexts["No matching jobs"].waitForExistence(timeout: timeout))
-        XCTAssertTrue(waitForDisappearance(mascot))
+        XCTAssertTrue(window.contains(mascot.frame))
+        XCTAssertEqual(mascot.frame.minY, mascotTop, accuracy: 1)
+        XCTAssertEqual(searchBar.frame.minY, barTop, accuracy: 1)
+        XCTAssertLessThanOrEqual(mascot.frame.maxY, searchBar.frame.minY + 1)
+        capture(app, "saved-jobs-search-no-match")
+    }
+
+    func testSavedJobsFiltersByCompanyAndStatus() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
+        app.launch()
+        selectTab("Saved Jobs", in: app)
+
+        // The fixture's one job: Full Stack AI Developer at Accenture Philippines, ready for a resume.
+        // Matching both texts finds the row, never a filter menu item or chip.
+        let job = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Accenture Philippines' AND label CONTAINS 'Ready for resume'")).firstMatch
+        XCTAssertTrue(job.waitForExistence(timeout: timeout))
+        let filter = app.buttons["jobs.filter"]
+        XCTAssertTrue(filter.waitForExistence(timeout: timeout))
+
+        // The fixture job is ready for a resume, so a Needs review filter leaves nothing to show.
+        filter.tap()
+        let needsReview = app.buttons["Needs review"]
+        XCTAssertTrue(needsReview.waitForExistence(timeout: timeout))
+        capture(app, "saved-jobs-filter-menu")
+        needsReview.tap()
+        XCTAssertTrue(app.staticTexts["No matching jobs"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(waitForDisappearance(job))
+        let statusChip = app.buttons["jobs.active-status-filter"]
+        XCTAssertTrue(statusChip.waitForExistence(timeout: timeout))
+        XCTAssertTrue((filter.value as? String ?? "").contains("Needs review"))
+        capture(app, "saved-jobs-status-filter")
+        XCTAssertTrue(tapWhenHittable(app.buttons["jobs.clear-filters"], in: app))
+        XCTAssertTrue(job.waitForExistence(timeout: timeout))
+        XCTAssertTrue(waitForDisappearance(statusChip))
+        XCTAssertFalse(app.staticTexts["No matching jobs"].exists)
+
+        // Filtering by the job's own company keeps it; its chip removes the filter.
+        filter.tap()
+        let company = app.buttons["Accenture Philippines"]
+        XCTAssertTrue(company.waitForExistence(timeout: timeout))
+        company.tap()
+        let companyChip = app.buttons["jobs.active-company-filter"]
+        XCTAssertTrue(companyChip.waitForExistence(timeout: timeout))
+        XCTAssertTrue(job.waitForExistence(timeout: timeout))
+        capture(app, "saved-jobs-company-filter")
+        companyChip.tap()
+        XCTAssertTrue(waitForDisappearance(companyChip))
+        XCTAssertTrue(job.exists)
     }
 
     private func capture(_ app: XCUIApplication, _ name: String) {
@@ -844,15 +943,13 @@ final class ResumeWizardUITests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
         app.launch()
         selectTab("Saved Jobs", in: app)
-        let search = app.searchFields.firstMatch
-        // Newer iOS keeps the search bar tucked under the large title until the list is pulled down.
-        if !search.waitForExistence(timeout: 2) { app.swipeDown() }
+        let search = app.textFields["jobs.search"]
         XCTAssertTrue(search.waitForExistence(timeout: timeout))
-        search.tap(); search.typeText("NO_MATCH_SENTINEL")
+        // Return closes the keyboard so the empty state's button below the search card stays on screen.
+        search.tap(); search.typeText("NO_MATCH_SENTINEL\n")
         XCTAssertTrue(app.staticTexts["No matching jobs"].waitForExistence(timeout: timeout))
-        XCTAssertTrue(tapWhenHittable(app.buttons["Clear search"], in: app))
-        dismissKeyboard(in: app)
-        if app.navigationBars["Saved Jobs"].buttons["Close"].exists { app.navigationBars["Saved Jobs"].buttons["Close"].tap() }
+        XCTAssertTrue(tapWhenHittable(app.buttons["jobs.clear-filters"], in: app))
+        XCTAssertFalse((search.value as? String ?? "").contains("NO_MATCH_SENTINEL"))
         let job = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Ready for resume'")).firstMatch
         XCTAssertTrue(job.waitForExistence(timeout: timeout))
         job.swipeLeft()
@@ -943,7 +1040,10 @@ final class ResumeWizardUITests: XCTestCase {
         let upper = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42))
         let lower = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.68))
         for _ in 0..<steps {
-            if element.waitForExistence(timeout: 1), element.isHittable { return true }
+            // A row behind the floating tab bar still reports hittable, but a swipe there lands on the
+            // tab bar, so it only counts once its middle sits above the bottom 15% of the screen.
+            if element.waitForExistence(timeout: 1), element.isHittable,
+               element.frame.midY < app.frame.maxY * 0.85 { return true }
             if element.exists, element.frame.midY < app.frame.midY * 0.5 {
                 upper.press(forDuration: 0.1, thenDragTo: lower, withVelocity: .slow, thenHoldForDuration: 0.3)
             } else {
