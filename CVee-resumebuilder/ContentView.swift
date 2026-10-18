@@ -92,6 +92,22 @@ private struct SelectionCircle: View {
     }
 }
 
+/// The multi-select counterpart of `SelectionCircle`: a square checkbox for lists where several
+/// rows can be chosen at once, such as the wizard's Experience step.
+private struct SelectionCheckbox: View {
+    let isSelected: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+            .font(.title3)
+            .foregroundStyle(isSelected ? CVeeColors.green : CVeeColors.secondary)
+            .scaleEffect(isSelected ? 1.05 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isSelected)
+            .sensoryFeedback(.selection, trigger: isSelected)
+            .accessibilityHidden(true)
+    }
+}
+
 /// The search card shared by Tasks and Saved Jobs: one full-width card-surface field with a search
 /// icon, a clear button while text is entered, and a filter menu whose icon turns action ink while a
 /// filter is active. Active filters show below the field as removable chips; there is no result count.
@@ -1824,7 +1840,7 @@ struct JobDetailView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Job details") {
+                Section {
                     if isEditing {
                         TextField("Name of the job", text: $name)
                         TextField("Company of the job", text: $company)
@@ -2297,6 +2313,47 @@ private enum ResumeStartMode: String, CaseIterable {
     case existing = "Use Existing Resume"
 }
 
+/// The wizard's Start Fresh / Use Existing Resume switch: a tall capsule track whose selected
+/// segment fills with the coral accent and white text. Each segment is a button with the selected
+/// trait, identified as `wizard.start-mode.fresh` and `wizard.start-mode.existing`.
+private struct StartModePicker: View {
+    @Binding var selection: ResumeStartMode
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(ResumeStartMode.allCases, id: \.self) { mode in
+                let isSelected = selection == mode
+                Button {
+                    selection = mode
+                } label: {
+                    Text(mode.rawValue)
+                        .font(.body.weight(.semibold))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(isSelected ? Color.white : CVeeColors.ink)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(isSelected ? CVeeColors.coral : Color.clear, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .accessibilityHint("Chooses how this resume starts")
+                .accessibilityIdentifier(mode == .fresh ? "wizard.start-mode.fresh" : "wizard.start-mode.existing")
+            }
+        }
+        .padding(4)
+        .background(CVeeColors.card, in: Capsule())
+        .overlay(Capsule().stroke(CVeeColors.divider, lineWidth: 1))
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: selection)
+        .sensoryFeedback(.selection, trigger: selection)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Start method")
+        .accessibilityIdentifier("wizard.start-mode")
+    }
+}
+
 struct NewResumeView: View {
     let onSaved: () -> Void
     let onOpenTasks: () -> Void
@@ -2329,7 +2386,10 @@ struct NewResumeView: View {
     @State private var selectedExperienceIDs = Set<UUID>()
     @State private var selectedJobID: UUID?
     @State private var taskSearch = ""
+    @State private var taskCompany = "All companies"
     @State private var jobSearch = ""
+    @State private var jobCompany = "All companies"
+    @State private var jobStatus = "All statuses"
     @State private var showingFileImporter = false
     @State private var showingAddTask = false
     @State private var showingImport = false
@@ -2348,6 +2408,7 @@ struct NewResumeView: View {
     @State private var showingAnalysis = false
     @State private var showingOptionalProfile = false
     @Environment(\.dynamicTypeSize) private var wizardTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var didLoadProfile = false
     @State private var reviewingJob: JobTarget?
     @State private var showingProvider = false
@@ -2371,12 +2432,29 @@ struct NewResumeView: View {
 
     private var selectedExperiences: [WorkExperience] { experiences.filter { selectedExperienceIDs.contains($0.id) } }
     private var selectedJob: JobTarget? { jobs.first { $0.id == selectedJobID } }
+    private static let jobStatuses = ["Ready for resume", "Needs review", "Needs description"]
+    private var taskCompanies: [String] { Array(Set(experiences.map(\.company))).sorted() }
+    private var jobCompanies: [String] { Array(Set(jobs.map(\.displayCompany))).sorted() }
     private var filteredExperiences: [WorkExperience] {
-        experiences.filter { taskSearch.isEmpty || [$0.jobTitle, $0.company, $0.tasksText].joined(separator: " ").localizedCaseInsensitiveContains(taskSearch) }
+        experiences.filter {
+            (taskCompany == "All companies" || $0.company == taskCompany) &&
+            (taskSearch.isEmpty || [$0.jobTitle, $0.company, $0.tasksText].joined(separator: " ").localizedCaseInsensitiveContains(taskSearch))
+        }
     }
     private var filteredJobs: [JobTarget] {
-        jobs.filter { jobSearch.isEmpty || [$0.parsedTitle ?? "", $0.parsedCompany ?? "", $0.rawText, $0.sourceURL ?? ""].joined(separator: " ").localizedCaseInsensitiveContains(jobSearch) }
+        jobs.filter {
+            (jobCompany == "All companies" || $0.displayCompany == jobCompany) &&
+            (jobStatus == "All statuses" || Self.status(for: $0) == jobStatus) &&
+            (jobSearch.isEmpty || [$0.parsedTitle ?? "", $0.parsedCompany ?? "", $0.rawText, $0.sourceURL ?? ""].joined(separator: " ").localizedCaseInsensitiveContains(jobSearch))
+        }
     }
+    /// The same status rule as the Saved Jobs rows and filter.
+    private static func status(for job: JobTarget) -> String {
+        if !job.hasDescription { return "Needs description" }
+        if job.captureReviewState == .needsReview { return "Needs review" }
+        return "Ready for resume"
+    }
+    private var mascotMood: MascotMood { step == .start ? .curious : step == .generated ? .joyful : .wink }
     private var profileIsValid: Bool { !draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !draftEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var canAdvance: Bool {
         switch step {
@@ -2429,13 +2507,31 @@ struct NewResumeView: View {
             Button("Generate replacement") { Task { await generate() } }.accessibilityIdentifier("wizard.confirm-replacement")
             Button("Keep draft", role: .cancel) { }
         } message: { Text("Your current draft stays available until the replacement is generated successfully.") }
-        .alert("Start a new resume?", isPresented: $showingStartOver) {
-            Button("Start over", role: .destructive) { resetWizard() }
+        .alert("Discard this draft?", isPresented: $showingStartOver) {
+            Button("Discard draft", role: .destructive) { resetWizard() }
             Button("Keep working", role: .cancel) { }
-        } message: { Text("This discards the current wizard session. Saved resumes are retained.") }
+        } message: { Text("This discards the current wizard session and starts a new resume. Saved resumes are retained.") }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Start over") { showingStartOver = true }.disabled(isLoading).accessibilityIdentifier("wizard.start-over")
+            ToolbarItem(placement: .topBarLeading) {
+                if step != .start {
+                    Button { moveBack() } label: { Image(systemName: "chevron.left") }
+                        .disabled(isLoading)
+                        .accessibilityLabel("Back")
+                        .accessibilityHint("Returns to the previous step")
+                        .accessibilityIdentifier("wizard.back")
+                }
+            }
+            // The large title row carries the mascot on its trailing side, where Start over was.
+            ToolbarItem(placement: .largeTitle) {
+                HStack(alignment: .center, spacing: 12) {
+                    Text("Resume Wizard")
+                        .font(.largeTitle.bold())
+                        .foregroundStyle(CVeeColors.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 0)
+                    MascotView(mood: mascotMood, size: 56)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: mascotMood)
+                }
             }
             ToolbarItem(placement: .topBarLeading) {
                 if focusedField != nil {
@@ -2479,14 +2575,15 @@ struct NewResumeView: View {
 
     private var startPage: some View {
         Form {
-            Section { Picker("Start method", selection: $startMode) { ForEach(ResumeStartMode.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented) }
+            Section {
+                StartModePicker(selection: $startMode)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
             if startMode == .fresh {
                 Section("Your identity") {
-                    Text("Full name and email are required. Add optional details when ready.").font(.caption).foregroundStyle(CVeeColors.secondary)
                     LabeledContent { TextField("Full name", text: $draftName).focused($focusedField, equals: .name).textContentType(.name).submitLabel(.next).onSubmit { focusedField = .email }.accessibilityIdentifier("wizard.full-name") } label: { Text("Full name (required)").fontWeight(.medium) }
                     LabeledContent { TextField("Email", text: $draftEmail).focused($focusedField, equals: .email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.done).onSubmit { focusedField = nil }.accessibilityIdentifier("wizard.email") } label: { Text("Email (required)").fontWeight(.medium) }
-                    if draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Text("Enter your full name.").font(.caption).foregroundStyle(CVeeColors.secondary) }
-                    if draftEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Text("Enter your email to continue.").font(.caption).foregroundStyle(CVeeColors.secondary).accessibilityIdentifier("wizard.profile-validation") }
                     DisclosureGroup("Optional details", isExpanded: $showingOptionalProfile) {
                         LabeledContent("Phone") { TextField("Phone", text: $draftPhone).focused($focusedField, equals: .phone).textContentType(.telephoneNumber).keyboardType(.phonePad) }
                         LabeledContent("Location") { TextField("Location", text: $draftLocation).focused($focusedField, equals: .location) }
@@ -2508,45 +2605,134 @@ struct NewResumeView: View {
         }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.start")
     }
 
-    private var workLibraryPage: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("\(selectedExperiences.count) selected")
-                    Button("Select all experience") { selectAllExperiences() }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("wizard.select-all")
-                    Button("Clear selection") { clearSelectedExperiences() }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("wizard.clear-selection")
+    /// The Saved Jobs search card, below the step header, filtering the Work Library by company.
+    private var experienceSearchBar: some View {
+        LibrarySearchBar(text: $taskSearch, prompt: "Search experience", clearLabel: "Clear experience search",
+                         filterLabel: "Filter experience", filterValue: taskCompany,
+                         isFiltering: taskCompany != "All companies", identifierPrefix: "wizard.experience") {
+            Section("Company") {
+                Button("All companies") { taskCompany = "All companies" }
+                ForEach(taskCompanies, id: \.self) { company in
+                    Button(company) { taskCompany = company }
                 }
             }
-            Section("Work Library") {
-                if filteredExperiences.isEmpty {
-                    ContentUnavailableView {
-                        Label(experiences.isEmpty ? "Add your experience" : "No matching experience", systemImage: "checklist")
-                    } description: { Text(experiences.isEmpty ? "Add a task or achievement to use in your resume." : "Try a different search.") }
-                    actions: {
-                        if experiences.isEmpty { Button("Add experience") { taskCountBeforeAdd = experiences.count; showingAddTask = true } }
-                        else { Button("Clear search") { taskSearch = "" } }
+        } chips: {
+            if taskCompany != "All companies" {
+                ActiveFilterChip(title: taskCompany, removeLabel: "Remove company filter",
+                                 identifier: "wizard.experience.active-company-filter") {
+                    taskCompany = "All companies"
+                }
+            }
+        }
+        .frame(maxWidth: 760)
+        .frame(maxWidth: .infinity)
+        .background(CVeeColors.page)
+    }
+
+    private var workLibraryPage: some View {
+        VStack(spacing: 0) {
+            if !experiences.isEmpty { experienceSearchBar }
+            Form {
+                Section {
+                    if filteredExperiences.isEmpty {
+                        ContentUnavailableView {
+                            Label(experiences.isEmpty ? "Add your experience" : "No matching experience", systemImage: "checklist")
+                        } description: { Text(experiences.isEmpty ? "Add a task or achievement to use in your resume." : "Try a different search or filter.") }
+                        actions: {
+                            if experiences.isEmpty { Button("Add experience") { taskCountBeforeAdd = experiences.count; showingAddTask = true } }
+                            else { Button("Clear search and filters") { taskSearch = ""; taskCompany = "All companies" } }
+                        }
+                    }
+                    ForEach(filteredExperiences) { experience in
+                        let isSelected = selectedExperienceIDs.contains(experience.id)
+                        Button { toggleExperience(experience.id) } label: {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(experience.tasks.first ?? "No task details").font(.subheadline.weight(.medium)).lineLimit(3)
+                                    Text(experience.jobTitle).font(.caption).foregroundStyle(CVeeColors.secondary)
+                                    MetadataPill(text: experience.company)
+                                }
+                                Spacer()
+                                SelectionCheckbox(isSelected: isSelected)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Includes or removes this task from the resume")
+                        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+                        .accessibilityIdentifier("wizard.task.\(experience.id.uuidString)")
+                    }
+                    Menu { Button("Add manually") { taskCountBeforeAdd = experiences.count; showingAddTask = true }; Button("Import Tasks List") { showingImport = true } } label: { Label("Add task", systemImage: "plus") }
+                } header: {
+                    HStack {
+                        Text("Work Library")
+                        Spacer()
+                        Text("\(selectedExperiences.count) selected").monospacedDigit()
                     }
                 }
-                ForEach(filteredExperiences) { experience in Button { toggleExperience(experience.id) } label: { HStack { VStack(alignment: .leading) { Text(experience.tasks.first ?? "No task details").font(.subheadline.weight(.medium)).lineLimit(3); Text(experience.jobTitle).font(.caption).foregroundStyle(CVeeColors.secondary); MetadataPill(text: experience.company) }; Spacer(); SelectionCircle(isSelected: selectedExperienceIDs.contains(experience.id)) } }.buttonStyle(.plain).accessibilityValue(selectedExperienceIDs.contains(experience.id) ? "Selected" : "Not selected") }
-                Menu { Button("Add manually") { taskCountBeforeAdd = experiences.count; showingAddTask = true }; Button("Import Tasks List") { showingImport = true } } label: { Label("Add task", systemImage: "plus") }
+            }.formStyle(.grouped).modifier(WorkspaceSurface())
+        }.accessibilityIdentifier("wizard.work-library")
+    }
+
+    /// The Saved Jobs search card and its Company and Status filters, below the step header.
+    private var jobSearchBar: some View {
+        LibrarySearchBar(text: $jobSearch, prompt: "Search target jobs", clearLabel: "Clear job search",
+                         filterLabel: "Filter target jobs", filterValue: "\(jobCompany), \(jobStatus)",
+                         isFiltering: jobCompany != "All companies" || jobStatus != "All statuses",
+                         identifierPrefix: "wizard.jobs") {
+            Section("Company") {
+                Button("All companies") { jobCompany = "All companies" }
+                ForEach(jobCompanies, id: \.self) { company in
+                    Button(company) { jobCompany = company }
+                }
             }
-        }.formStyle(.grouped).modifier(WorkspaceSurface()).searchable(text: $taskSearch, prompt: "Search experience").accessibilityIdentifier("wizard.work-library")
+            Section("Status") {
+                Button("All statuses") { jobStatus = "All statuses" }
+                ForEach(Self.jobStatuses, id: \.self) { status in
+                    Button(status) { jobStatus = status }
+                }
+            }
+        } chips: {
+            if jobCompany != "All companies" || jobStatus != "All statuses" {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { jobFilterChips }
+                    VStack(alignment: .leading, spacing: 0) { jobFilterChips }
+                }
+            }
+        }
+        .frame(maxWidth: 760)
+        .frame(maxWidth: .infinity)
+        .background(CVeeColors.page)
+    }
+
+    @ViewBuilder
+    private var jobFilterChips: some View {
+        if jobCompany != "All companies" {
+            ActiveFilterChip(title: jobCompany, removeLabel: "Remove company filter",
+                             identifier: "wizard.jobs.active-company-filter") { jobCompany = "All companies" }
+        }
+        if jobStatus != "All statuses" {
+            ActiveFilterChip(title: jobStatus, removeLabel: "Remove status filter",
+                             identifier: "wizard.jobs.active-status-filter") { jobStatus = "All statuses" }
+        }
     }
 
     private var jobDescriptionPage: some View {
+        VStack(spacing: 0) {
+            if !jobs.isEmpty { jobSearchBar }
+            jobList
+        }.accessibilityIdentifier("wizard.job-description")
+    }
+
+    private var jobList: some View {
         Form {
             Section("Job descriptions") {
                 if filteredJobs.isEmpty {
                     ContentUnavailableView {
                         Label(jobs.isEmpty ? "No saved jobs" : "No matching jobs", systemImage: "briefcase")
-                    } description: { Text(jobs.isEmpty ? "Add a job description to continue." : "Try a different search.") }
+                    } description: { Text(jobs.isEmpty ? "Add a job description to continue." : "Try a different search or filter.") }
                     actions: {
                         if jobs.isEmpty { Button("Add job") { jobCountBeforeAdd = jobs.count; showingAddJob = true } }
-                        else { Button("Clear search") { jobSearch = "" } }
+                        else { Button("Clear search and filters") { jobSearch = ""; jobCompany = "All companies"; jobStatus = "All statuses" } }
                     }
                 }
                 ForEach(filteredJobs) { job in
@@ -2570,7 +2756,7 @@ struct NewResumeView: View {
                 }
                 Button { jobCountBeforeAdd = jobs.count; showingAddJob = true } label: { Label("Add job", systemImage: "plus") }
             }
-        }.formStyle(.grouped).modifier(WorkspaceSurface()).searchable(text: $jobSearch, prompt: "Search target jobs").accessibilityIdentifier("wizard.job-description")
+        }.formStyle(.grouped).modifier(WorkspaceSurface())
     }
 
     private var summaryPage: some View {
@@ -2605,8 +2791,17 @@ struct NewResumeView: View {
             VStack(alignment: .leading, spacing: 16) {
                 if let errorMessage { Text(errorMessage).foregroundStyle(.red).accessibilityIdentifier("wizard.draft-error") }
                 if generatedDraft != nil {
+                    HStack {
+                        Spacer(minLength: 0)
+                        Button("Discard draft", role: .destructive) { showingStartOver = true }
+                            .buttonStyle(.bordered)
+                            .frame(minHeight: 44)
+                            .disabled(isLoading)
+                            .accessibilityHint("Discards this draft and starts a new resume")
+                            .accessibilityIdentifier("wizard.start-over")
+                    }
                     if generatedInputSignature != inputSignature {
-                        Text("This draft reflects earlier inputs. Go Back to review and generate a replacement.").font(.caption).foregroundStyle(CVeeColors.secondary)
+                        Text("This draft reflects earlier inputs. Go back to review and generate a replacement.").font(.caption).foregroundStyle(CVeeColors.secondary)
                     }
                     if isEditingGenerated {
                         Picker("Editor format", selection: $generatedEditorMode) {
@@ -2670,22 +2865,24 @@ struct NewResumeView: View {
             if let guidance = advanceGuidance, step != .generated {
                 Text(guidance).font(.caption).foregroundStyle(CVeeColors.secondary).accessibilityIdentifier("wizard.advance-guidance")
             }
-            HStack {
-                if step != .start { Button("Back") { moveBack() }.disabled(isLoading).frame(minHeight: 44).accessibilityIdentifier("wizard.back") }
-                Spacer()
-                if step == .summary {
-                    Button(isLoading ? "Generating…" : generatedDraft == nil ? "Generate Resume" : "Generate replacement") {
-                        focusedField = nil
-                        if generatedDraft != nil && !isSaved { showingReplaceDraft = true }
-                        else { Task { await generate() } }
-                    }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.generate")
-                } else if step == .generated {
-                    generatedActions
-                } else {
-                    Button("Continue") { advance() }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance || isLoading).accessibilityIdentifier("wizard.next")
-                }
+            if step == .summary {
+                Button {
+                    focusedField = nil
+                    if generatedDraft != nil && !isSaved { showingReplaceDraft = true }
+                    else { Task { await generate() } }
+                } label: {
+                    Text(isLoading ? "Generating…" : generatedDraft == nil ? "Generate Resume" : "Generate replacement").frame(maxWidth: .infinity)
+                }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.generate")
+            } else if step == .generated {
+                HStack { Spacer(minLength: 0); generatedActions }
+            } else {
+                Button { advance() } label: { Text("Continue").frame(maxWidth: .infinity) }
+                    .buttonStyle(CoralButtonStyle()).disabled(!canAdvance || isLoading).accessibilityIdentifier("wizard.next")
             }
-        }.padding(.horizontal).padding(.vertical, 10).background(.bar)
+        }
+        .padding(.horizontal).padding(.vertical, 10).background(.bar)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("wizard.bottom-bar")
     }
 
     private var advanceGuidance: String? {
@@ -2730,7 +2927,7 @@ struct NewResumeView: View {
         generatedExperienceIDs = []; generatedInputSignature = ""; selectedExperienceIDs = []; selectedJobID = nil
         baselineText = ""; selectedResumeID = nil; startMode = .fresh; step = .start
         isEditingGenerated = false; generatedEditorMode = .formatted; isSaved = false; errorMessage = nil
-        taskSearch = ""; jobSearch = ""; loadProfileDraft()
+        taskSearch = ""; taskCompany = "All companies"; jobSearch = ""; jobCompany = "All companies"; jobStatus = "All statuses"; loadProfileDraft()
     }
 
     private var saveButton: some View {
@@ -2748,8 +2945,6 @@ struct NewResumeView: View {
 
     private func loadProfileDraft() { draftName = profileName; draftEmail = profileEmail; draftPhone = profilePhone; draftLocation = profileLocation; draftLinkedIn = profileLinkedIn; draftGitHub = profileGitHub; draftEducation = profileEducation; draftSkills = profileSkills; draftCertifications = profileCertifications }
     private func toggleExperience(_ id: UUID) { if selectedExperienceIDs.contains(id) { selectedExperienceIDs.remove(id) } else { selectedExperienceIDs.insert(id) } }
-    private func selectAllExperiences() { selectedExperienceIDs = Set(experiences.map(\.id)) }
-    private func clearSelectedExperiences() { selectedExperienceIDs.removeAll() }
     private func advance() {
         focusedField = nil
         if step == .start, startMode == .fresh { profileName = draftName; profileEmail = draftEmail; profilePhone = draftPhone; profileLocation = draftLocation; profileLinkedIn = draftLinkedIn; profileGitHub = draftGitHub; profileEducation = draftEducation; profileSkills = draftSkills; profileCertifications = draftCertifications }

@@ -639,6 +639,7 @@ final class ResumeWizardUITests: XCTestCase {
         email.typeText("test@example.com")
         let enabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: next)
         wait(for: [enabled], timeout: timeout)
+        XCTAssertFalse(app.buttons["wizard.start-over"].exists, "Discarding a draft is only offered on the Resume step")
         next.tap()
         XCTAssertTrue(app.descendants(matching: .any)["wizard.work-library"].waitForExistence(timeout: timeout))
         let back = app.buttons["wizard.back"]
@@ -698,12 +699,21 @@ final class ResumeWizardUITests: XCTestCase {
         email.typeText("test@example.com")
         app.buttons["wizard.next"].tap()
 
-        XCTAssertTrue(app.buttons["wizard.select-all"].waitForExistence(timeout: timeout))
-        app.buttons["wizard.select-all"].tap()
+        // The search card sits below the step header rather than between the title and the header.
+        let progress = app.descendants(matching: .any)["wizard.progress"]
+        let search = app.textFields["wizard.experience.search"]
+        XCTAssertTrue(search.waitForExistence(timeout: timeout))
+        XCTAssertGreaterThanOrEqual(search.frame.minY, progress.frame.maxY)
+        XCTAssertTrue(app.buttons["wizard.experience.filter"].exists)
+        let next = app.buttons["wizard.next"]
+        XCTAssertLessThan(abs(next.frame.width - app.frame.width), 48, "Continue spans the bottom bar")
+        let task = wizardTaskRows(in: app).firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: timeout))
+        task.tap()
         XCTAssertTrue(app.staticTexts["1 selected"].waitForExistence(timeout: timeout))
-        app.buttons["wizard.clear-selection"].tap()
+        task.tap()
         XCTAssertTrue(app.staticTexts["0 selected"].waitForExistence(timeout: timeout))
-        app.buttons["wizard.select-all"].tap()
+        task.tap()
         XCTAssertTrue(app.staticTexts["1 selected"].waitForExistence(timeout: timeout))
         app.buttons["wizard.next"].tap()
 
@@ -820,7 +830,7 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(tapWhenHittable(app.buttons["wizard.return-to-draft"], in: app))
         XCTAssertTrue(tapWhenHittable(app.buttons["wizard.edit-resume"], in: app))
         XCTAssertTrue((editor.value as? String ?? "").contains("NAVIGATION_SENTINEL"))
-        app.buttons["wizard.start-over"].tap()
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.start-over"], in: app))
         dismissConfirmation("Keep working", in: app)
         XCTAssertTrue((editor.value as? String ?? "").contains("NAVIGATION_SENTINEL"))
         dismissKeyboard(in: app)
@@ -912,9 +922,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.textFields["wizard.email"].tap(); app.textFields["wizard.email"].typeText("test@example.com")
         dismissKeyboard(in: app)
         app.buttons["wizard.next"].tap()
-        XCTAssertTrue(app.buttons["wizard.select-all"].waitForExistence(timeout: timeout))
-        app.buttons["wizard.select-all"].tap()
-        XCTAssertTrue(app.staticTexts["1 selected"].waitForExistence(timeout: timeout))
+        selectFirstWizardTask(in: app)
         app.buttons["wizard.next"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["wizard.job-description"].waitForExistence(timeout: timeout))
         let job = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'wizard.job.'")).firstMatch
@@ -997,9 +1005,7 @@ final class ResumeWizardUITests: XCTestCase {
         dismissKeyboard(in: app)
         app.buttons["wizard.next"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["wizard.work-library"].waitForExistence(timeout: timeout))
-        XCTAssertTrue(app.buttons["wizard.select-all"].waitForExistence(timeout: timeout))
-        app.buttons["wizard.select-all"].tap()
-        XCTAssertTrue(app.staticTexts["1 selected"].waitForExistence(timeout: timeout))
+        selectFirstWizardTask(in: app)
         app.buttons["wizard.next"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["wizard.job-description"].waitForExistence(timeout: timeout))
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'wizard.job.'")).firstMatch.tap()
@@ -1007,6 +1013,18 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(app.buttons["wizard.generate"].waitForExistence(timeout: timeout))
         app.buttons["wizard.generate"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["wizard.generated.pdf"].waitForExistence(timeout: timeout))
+    }
+
+    private func wizardTaskRows(in app: XCUIApplication) -> XCUIElementQuery {
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'wizard.task.'"))
+    }
+
+    /// Selects the first Work Library task by tapping its row, the only way to select on Experience.
+    private func selectFirstWizardTask(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let task = wizardTaskRows(in: app).firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: timeout), file: file, line: line)
+        task.tap()
+        XCTAssertTrue(app.staticTexts["1 selected"].waitForExistence(timeout: timeout), file: file, line: line)
     }
 
     private func assertPreviewContainsText(_ app: XCUIApplication, _ preview: XCUIElement, _ expected: String, file: StaticString = #filePath, line: UInt = #line) {
@@ -1064,8 +1082,10 @@ final class ResumeWizardUITests: XCTestCase {
     private func tapWhenHittable(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
         for _ in 0..<5 {
             if element.waitForExistence(timeout: 2) {
+                // Past the first step, content under the wizard's bottom bar is scrolled up first.
                 let back = app.buttons["wizard.back"]
-                if back.exists, !["wizard.back", "wizard.next", "wizard.generate", "wizard.save-resume", "wizard.edit-resume", "wizard.check-job-match", "wizard.start-over"].contains(element.identifier), element.frame.midY >= back.frame.minY - 12 {
+                let bar = app.descendants(matching: .any)["wizard.bottom-bar"]
+                if back.exists, bar.exists, !["wizard.back", "wizard.next", "wizard.generate", "wizard.save-resume", "wizard.edit-resume", "wizard.check-job-match"].contains(element.identifier), element.frame.midY >= bar.frame.minY - 12 {
                     app.swipeUp()
                     continue
                 }
