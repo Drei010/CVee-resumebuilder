@@ -2433,7 +2433,7 @@ struct NewResumeView: View {
     private var selectedExperiences: [WorkExperience] { experiences.filter { selectedExperienceIDs.contains($0.id) } }
     private var selectedJob: JobTarget? { jobs.first { $0.id == selectedJobID } }
     private static let jobStatuses = ["Ready for resume", "Needs review", "Needs description"]
-    private var taskCompanies: [String] { Array(Set(experiences.map(\.company))).sorted() }
+    private var taskCompanies: [String] { Array(Set(experiences.map(\.company).filter { !$0.isEmpty })).sorted() }
     private var jobCompanies: [String] { Array(Set(jobs.map(\.displayCompany))).sorted() }
     private var filteredExperiences: [WorkExperience] {
         experiences.filter {
