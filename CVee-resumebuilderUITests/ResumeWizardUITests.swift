@@ -462,15 +462,17 @@ final class ResumeWizardUITests: XCTestCase {
         let searchBar = app.descendants(matching: .any).matching(identifier: "tasks.search-bar").firstMatch
         XCTAssertTrue(searchBar.waitForExistence(timeout: timeout))
         // Same 16-point side margins as the cards above it, so its edges line up with the capture card.
+        // On wide displays the list is a centered 760-point column, so the margins start at its edges.
         let window = app.windows.firstMatch.frame
-        XCTAssertEqual(searchBar.frame.minX - window.minX, 16, accuracy: 1)
-        XCTAssertEqual(window.maxX - searchBar.frame.maxX, 16, accuracy: 1)
+        let sideMargin = max(0, (window.width - 760) / 2) + 16
+        XCTAssertEqual(searchBar.frame.minX - window.minX, sideMargin, accuracy: 1)
+        XCTAssertEqual(window.maxX - searchBar.frame.maxX, sideMargin, accuracy: 1)
         XCTAssertEqual(searchBar.frame.minX, cardFrame.minX, accuracy: 1)
         XCTAssertEqual(searchBar.frame.maxX, cardFrame.maxX, accuracy: 1)
         // Scroll so the pinned search header and the task list show together.
         app.swipeUp()
         XCTAssertTrue(revealHittable(search, in: app))
-        XCTAssertEqual(searchBar.frame.minX - window.minX, 16, accuracy: 1)
+        XCTAssertEqual(searchBar.frame.minX - window.minX, sideMargin, accuracy: 1)
         capture(app, "tasks-search-full-width")
 
         search.tap()
