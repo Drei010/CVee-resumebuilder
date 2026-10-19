@@ -787,7 +787,8 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertFalse(app.buttons["analysis.save-requirements-toolbar"].exists)
         let saveRequirements = app.buttons["analysis.save-requirements"]
         XCTAssertTrue(saveRequirements.waitForExistence(timeout: timeout))
-        XCTAssertGreaterThan(saveRequirements.frame.width, app.frame.width * 0.75, "Save requirements spans its row")
+        // Measured against the report's own bar: on iPad the report is a sheet narrower than the window.
+        XCTAssertGreaterThan(saveRequirements.frame.width, app.navigationBars["Resume report"].frame.width * 0.75, "Save requirements spans its row")
         XCTAssertTrue(tapWhenHittable(saveRequirements, in: app))
         let coverage = app.staticTexts["analysis.coverage-summary"]
         XCTAssertTrue(reveal(coverage, in: app))

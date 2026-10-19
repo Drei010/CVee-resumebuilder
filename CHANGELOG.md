@@ -11,7 +11,7 @@ Captures: [design-audit/2026-10-19-wizard-round-two/](design-audit/2026-10-19-wi
 - The mascot moves from beside the title to a 112-point dog with a speech bubble above the progress bar, as on Tasks and Saved Jobs. The bubble carries each step's guidance, which the progress header then leaves out. It shows in portrait at standard text sizes and hides while typing.
 - Experience checkboxes and Target Job radio buttons sit on the left of each row. The Work Library header has a select-all checkbox for the tasks shown, with a mixed state when only some are selected. An empty work library no longer shows Add task under Add experience.
 - Review rows lead with a pencil icon button instead of "Edit profile", "Edit experience", and "Edit target job" links.
-- On the Resume step, Edit and Match sit beside Discard draft in a row pinned above the draft, and Save Resume spans the bottom bar. "Keep working" and "Keep draft" in the wizard's alerts are ink instead of the accent.
+- On the Resume step, Edit and Match sit beside Discard draft in a row pinned above the draft, and Save Resume spans the bottom bar. The wizard's alerts show "Keep working", "Keep draft", and "Generate replacement" in ink instead of the accent; Discard draft stays red.
 - The resume report drops its toolbar Save and Recheck buttons; Save requirements spans the row. This applies to the Resumes tab's report too.
 - The Experience and Target Job pages are accessibility containers, so the filter chips keep their own identifiers.
 - The wizard UI tests cover select all, the mascot, the Review edit icons, the Resume step's row and Save Resume width, and the report without toolbar Save or Recheck.
