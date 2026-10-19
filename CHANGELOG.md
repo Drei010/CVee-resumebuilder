@@ -2,6 +2,19 @@
 
 Dated history of shipped changes, newest first. Dated entries come from the git history (commit dates, pull request numbers from merge commits, and short commit hashes where one day holds several commits) and from the dated reports in [design-audit/](design-audit/README.md). What CVee does today is in [README.md](README.md); planned work is in [ROADMAP.md](ROADMAP.md).
 
+## 2026-10-18
+
+### Resume Wizard, round one
+
+Captures: [design-audit/2026-10-18-wizard-round-one/](design-audit/2026-10-18-wizard-round-one/) (nine iPhone screens).
+
+- Start over is gone from the toolbar; the Resume step offers "Discard draft" with the same confirmation. The mascot sits to the right of the large "Resume Wizard" title.
+- The Start Fresh / Use Existing Resume switch is a taller capsule control with a coral selected segment and white text. The "Full name and email are required" note and the inline "Enter your full name." / "Enter your email to continue." rows are removed; the bottom bar still explains what is missing.
+- Continue and Generate span the bottom bar. Back moved from the bottom bar to a chevron at the top left on steps 2 to 5.
+- Experience and Target Job use the Saved Jobs search card below the step header instead of the navigation bar search field. Experience filters by company; Target Job filters by company and status. Select all and Clear selection are removed, the selected count stays, and task rows use square checkboxes while job rows keep the single-choice circle.
+- Job details no longer repeats a "Job details" header under its title.
+- The wizard UI tests select tasks by tapping rows, use the chevron for Back, and discard from the Resume step.
+
 ## 2026-10-09
 
 ### Documentation pass 3
