@@ -2423,6 +2423,7 @@ struct NewResumeView: View {
     @State private var showingOptionalProfile = false
     @Environment(\.dynamicTypeSize) private var wizardTypeSize
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var keyboardVisible = false
     @State private var didLoadProfile = false
@@ -2487,6 +2488,38 @@ struct NewResumeView: View {
         case .generated: return "Your draft is ready"
         }
     }
+    /// The bubble's line: an empty Work Library or job list gets its own line, otherwise the step's
+    /// title and guidance.
+    private var mascotLine: (mood: MascotMood, title: String, message: String) {
+        if step == .workLibrary && experiences.isEmpty {
+            return (.curious, "No tasks added yet", "Add a task or achievement below, then pick it for this resume.")
+        }
+        if step == .jobDescription && jobs.isEmpty {
+            return (.curious, "No jobs saved yet", "Add the job you’re applying for below, and CVee will tailor your resume to it.")
+        }
+        return (mascotMood, mascotTitle, step.guidance)
+    }
+    /// The wizard error popup's title for the step that failed.
+    private var errorTitle: String {
+        switch step {
+        case .start: return "Couldn’t use that resume"
+        case .summary: return "Couldn’t generate your resume"
+        case .generated: return "Couldn’t save your resume"
+        default: return "Something went wrong"
+        }
+    }
+    /// The popup message keeps each step's existing identifier.
+    private var errorIdentifier: String {
+        switch step {
+        case .start: return "wizard.baseline-error"
+        case .generated: return "wizard.draft-error"
+        default: return "wizard.error"
+        }
+    }
+    /// At compact width and standard text sizes the title leads the navigation bar, beside Back. On iPad
+    /// the bar shares its row with the tab bar, where a title item would push Back into the overflow
+    /// menu, so the large title stays.
+    private var showsInlineTitle: Bool { horizontalSizeClass == .compact && !wizardTypeSize.isAccessibilitySize }
     /// The bubble shows in portrait at standard text sizes and hides while typing, so fields keep the room.
     private var showsMascot: Bool { !wizardTypeSize.isAccessibilitySize && verticalSizeClass != .compact && focusedField == nil && !keyboardVisible }
     private var profileIsValid: Bool { !draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !draftEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -2503,11 +2536,12 @@ struct NewResumeView: View {
     var body: some View {
         VStack(spacing: 0) {
             if showsMascot {
-                MascotSpeechBubble(mood: mascotMood, title: mascotTitle, message: step.guidance,
+                let line = mascotLine
+                MascotSpeechBubble(mood: line.mood, title: line.title, message: line.message,
                                    accessibilityID: "wizard.mascot", mascotSize: MascotMetrics.prominentSize)
                     .padding(.horizontal, 16).padding(.top, 4)
                     .frame(maxWidth: 760)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: mascotMood)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: line.mood)
             }
             progressHeader
             Group {
@@ -2524,8 +2558,15 @@ struct NewResumeView: View {
             .disabled(isLoading)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { navigationBar }
+        // Over the bottom bar too; the toolbar's buttons hide while it shows.
+        .overlay {
+            if let errorMessage {
+                MascotErrorPopup(title: errorTitle, message: errorMessage, messageIdentifier: errorIdentifier) { self.errorMessage = nil }
+            }
+        }
         .navigationTitle("Resume Wizard")
-        .navigationBarTitleDisplayMode(wizardTypeSize.isAccessibilitySize ? .inline : .large)
+        // On iPhone the title sits in the bar beside Back (see the toolbar below) rather than in a large-title row.
+        .toolbarTitleDisplayMode(showsInlineTitle || wizardTypeSize.isAccessibilitySize ? .inline : .large)
         .background(CVeeColors.page)
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("cveeDidClearData"))) { _ in pendingResume = nil; resetWizard() }
         .onAppear { if !didLoadProfile { loadProfileDraft(); didLoadProfile = true }; refreshProviderStatus() }
@@ -2547,7 +2588,7 @@ struct NewResumeView: View {
         .background { wizardAlerts }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                if step != .start {
+                if step != .start && errorMessage == nil {
                     Button { moveBack() } label: { Image(systemName: "chevron.left") }
                         .disabled(isLoading)
                         .accessibilityLabel("Back")
@@ -2555,8 +2596,22 @@ struct NewResumeView: View {
                         .accessibilityIdentifier("wizard.back")
                 }
             }
+            // The title leads the bar, right after Back, and an empty principal item replaces the centered
+            // title. The navigation title stays set, so the bar keeps its "Resume Wizard" name.
+            if showsInlineTitle {
+                ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1).accessibilityHidden(true) }
+                ToolbarItem(placement: .topBarLeading) {
+                    Text("Resume Wizard")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(CVeeColors.ink)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .accessibilityAddTraits(.isHeader)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
             ToolbarItem(placement: .topBarLeading) {
-                if focusedField != nil {
+                if focusedField != nil && errorMessage == nil {
                     Button { focusedField = nil } label: { Image(systemName: "keyboard.chevron.compact.down") }
                         .accessibilityLabel("Hide keyboard")
                         .accessibilityIdentifier("wizard.hide-keyboard")
@@ -2564,7 +2619,7 @@ struct NewResumeView: View {
             }
         }
         .onChange(of: errorMessage) { _, message in
-            if let message { UIAccessibility.post(notification: .announcement, argument: message) }
+            if let message { focusedField = nil; UIAccessibility.post(notification: .announcement, argument: message) }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardVisible = true }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardVisible = false }
@@ -2638,7 +2693,6 @@ struct NewResumeView: View {
                     Button("Upload PDF") { showingFileImporter = true }
                     if !resumes.isEmpty { ForEach(resumes) { resume in Button { do { let document = try ResumeDocumentConverter.document(for: resume); baselineText = ResumeDocumentRenderer().attributedText(for: document).string; selectedResumeID = resume.id } catch { errorMessage = error.localizedDescription } } label: { Label(resume.name, systemImage: selectedResumeID == resume.id ? "checkmark.circle.fill" : "doc.text") } } }
                     if !baselineText.isEmpty { Text("Baseline ready").font(.caption).foregroundStyle(.secondary) }
-                    if let errorMessage { Text(errorMessage).foregroundStyle(CVeeColors.ink).accessibilityIdentifier("wizard.baseline-error") }
                 }
             }
         }.formStyle(.grouped).modifier(WorkspaceSurface()).accessibilityIdentifier("wizard.start")
@@ -2676,9 +2730,14 @@ struct NewResumeView: View {
                     if filteredExperiences.isEmpty {
                         ContentUnavailableView {
                             Label(experiences.isEmpty ? "Add your experience" : "No matching experience", systemImage: "checklist")
-                        } description: { Text(experiences.isEmpty ? "Add a task or achievement to use in your resume." : "Try a different search or filter.") }
+                        } description: {
+                            // With an empty library the bubble above already says what to do.
+                            if !(experiences.isEmpty && showsMascot) {
+                                Text(experiences.isEmpty ? "Add a task or achievement to use in your resume." : "Try a different search or filter.")
+                            }
+                        }
                         actions: {
-                            if experiences.isEmpty { Button("Add experience") { taskCountBeforeAdd = experiences.count; showingAddTask = true } }
+                            if experiences.isEmpty { Button("Add experience") { taskCountBeforeAdd = experiences.count; showingAddTask = true }.buttonStyle(CoralButtonStyle()) }
                             else { Button("Clear search and filters") { taskSearch = ""; taskCompany = "All companies" } }
                         }
                     }
@@ -2793,10 +2852,22 @@ struct NewResumeView: View {
                 if filteredJobs.isEmpty {
                     ContentUnavailableView {
                         Label(jobs.isEmpty ? "No saved jobs" : "No matching jobs", systemImage: "briefcase")
-                    } description: { Text(jobs.isEmpty ? "Add a job description to continue." : "Try a different search or filter.") }
+                    } description: {
+                        // With no saved jobs the bubble above already says what to do.
+                        if !(jobs.isEmpty && showsMascot) {
+                            Text(jobs.isEmpty ? "Add a job description to continue." : "Try a different search or filter.")
+                        }
+                    }
                     actions: {
-                        if jobs.isEmpty { Button("Add job") { jobCountBeforeAdd = jobs.count; showingAddJob = true } }
-                        else { Button("Clear search and filters") { jobSearch = ""; jobCompany = "All companies"; jobStatus = "All statuses" } }
+                        // Styled buttons take only their own taps inside the form row. Add job is coral, as on Saved Jobs.
+                        Button("Add job") { jobCountBeforeAdd = jobs.count; showingAddJob = true }
+                            .buttonStyle(CoralButtonStyle())
+                            .accessibilityIdentifier("wizard.jobs.empty-add-job")
+                        if !jobs.isEmpty {
+                            Button("Clear search and filters") { jobSearch = ""; jobCompany = "All companies"; jobStatus = "All statuses" }
+                                .buttonStyle(.borderless)
+                                .accessibilityIdentifier("wizard.jobs.clear-filters")
+                        }
                     }
                 }
                 ForEach(filteredJobs) { job in
@@ -2819,14 +2890,16 @@ struct NewResumeView: View {
                     .accessibilityIdentifier("wizard.job.\(job.id.uuidString)")
                     .accessibilityValue(selectedJobID == job.id ? "Selected" : job.isUsableForResume ? "Available" : "Unavailable")
                 }
-                Button { jobCountBeforeAdd = jobs.count; showingAddJob = true } label: { Label("Add job", systemImage: "plus") }
+                // An empty state already offers Add job above.
+                if !filteredJobs.isEmpty {
+                    Button { jobCountBeforeAdd = jobs.count; showingAddJob = true } label: { Label("Add job", systemImage: "plus") }
+                }
             }
         }.formStyle(.grouped).modifier(WorkspaceSurface())
     }
 
     private var summaryPage: some View {
         Form {
-            if let errorMessage { Section { Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.red).accessibilityIdentifier("wizard.error") } }
             if generatedDraft != nil {
                 Section("Existing draft") {
                     Text(generatedInputSignature == inputSignature ? "Your generated draft is available." : "Your draft reflects earlier inputs. Generate a replacement to use your changes.")
@@ -2869,7 +2942,6 @@ struct NewResumeView: View {
     private var generatedScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if let errorMessage { Text(errorMessage).foregroundStyle(.red).accessibilityIdentifier("wizard.draft-error") }
                 if generatedDraft != nil {
                     if generatedInputSignature != inputSignature {
                         Text("This draft reflects earlier inputs. Go back to review and generate a replacement.").font(.caption).foregroundStyle(CVeeColors.secondary)
@@ -3123,7 +3195,7 @@ struct NewResumeView: View {
             pendingResumeWasSaved = true
             UIAccessibility.post(notification: .announcement, argument: "Resume saved")
             onSaved()
-        } catch { errorMessage = "Couldn’t save resume. Your draft is retained. \(error.localizedDescription)" }
+        } catch { errorMessage = "Your draft is kept. \(error.localizedDescription)" }
     }
 
 }
@@ -3287,20 +3359,55 @@ struct ResumeAnalysisSheet: View {
     @State private var removedPhrases: [String] = []
     @State private var isSuggesting = false
     @State private var suggestionTask: Task<Void, Never>?
-    @State private var aiEvidence: [OnDeviceAnalysisSuggestionService.EvidenceSuggestion] = []
+    @State private var aiEvidence: [AnalysisSuggestionService.EvidenceSuggestion] = []
+    @State private var evidenceSource = ""
     @State private var message: String?
+    @State private var route: AnalysisSuggestionRoute = .none
+    @State private var showingProvider = false
     @State private var pendingSave = false
     @State private var pendingChecklistData: Data?
 
     private var description: String { job?.rawText ?? "" }
     private var localSuggestions: [String] { ResumeAnalysisService.suggestedRequirements(from: description).filter { phrase in !requirements.contains { ResumeAnalysisService.normalized($0.phrase) == ResumeAnalysisService.normalized(phrase) } } }
+    /// The match percentage once confirmed phrases are saved for the current job description.
+    private var matchPercentage: Int? { isChecklistSaved && !jobChanged ? report?.matchPercentage : nil }
+
+    /// The mascot's line for the report's state, from no linked job to a calculated match.
+    private var mascotLine: (mood: MascotMood, title: String, message: String) {
+        guard job != nil else {
+            return (.curious, "Let’s check your resume", "Link a target job to see how well it matches. Document health is below.")
+        }
+        if jobChanged { return (.curious, "The job description changed", "Review the phrases again to update your match.") }
+        if isEditingRequirements || !isChecklistSaved {
+            return (.curious, "Let’s check your match", "Confirm the job’s key phrases below, then save them to see your match.")
+        }
+        guard let report, let percentage = report.matchPercentage else {
+            return (.curious, "No phrases confirmed", "Add phrases from the job description to see your match.")
+        }
+        let mood: MascotMood = percentage >= 75 ? .joyful : percentage >= 40 ? .wink : .curious
+        return (mood, "Your resume matches \(percentage)%", "\(report.mentionedCount) of \(report.reviewedCount) confirmed phrases appear in it.")
+    }
 
     var body: some View {
         NavigationStack {
             List {
+                // Hidden while typing a phrase, so the field keeps the room.
+                if !phraseFocused {
+                    let line = mascotLine
+                    MascotSpeechBubble(mood: line.mood, title: line.title, message: line.message,
+                                       accessibilityID: "analysis.mascot", mascotSize: MascotMetrics.prominentSize)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 12))
+                        .listRowBackground(CVeeColors.page)
+                        .listRowSeparator(.hidden)
+                }
                 Section {
                     LabeledContent("Resume", value: resumeName)
                     LabeledContent("Target job", value: job.map { [$0.parsedTitle, $0.parsedCompany].compactMap { $0 }.joined(separator: " · ") }.flatMap { $0.isEmpty ? nil : $0 } ?? "No linked job")
+                    if job != nil {
+                        LabeledContent("Resume match", value: matchPercentage.map { "\($0)%" } ?? "Not calculated")
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("analysis.match-percentage")
+                    }
                     LabeledContent("Analyzed", value: report?.analyzedAt.formatted(date: .abbreviated, time: .shortened) ?? "Not checked")
                 }
 
@@ -3338,13 +3445,24 @@ struct ResumeAnalysisSheet: View {
                             }
                         }
                         ForEach(aiEvidence) { suggestion in
-                            DisclosureGroup("Apple Intelligence evidence · Passage \(suggestion.passageID + 1)") {
+                            DisclosureGroup("\(evidenceSource) evidence · Passage \(suggestion.passageID + 1)") {
                                 Text(suggestion.quotation)
                             }
                         }
-                        Button(isSuggesting ? "Finding related evidence…" : "Find related evidence") { suggestEvidence() }
-                            .disabled(isSuggesting)
-                            .accessibilityIdentifier("analysis.find-related-evidence")
+                        switch route {
+                        case .none:
+                            chooseProviderButton(identifier: "analysis.evidence-configure-provider")
+                        case .onDevice, .remote:
+                            let suffix = route == .onDevice ? "" : " with \(route.providerName ?? "")"
+                            Button(isSuggesting ? "Finding related evidence\(suffix)…" : "Find related evidence\(suffix)") { suggestEvidence() }
+                                .disabled(isSuggesting)
+                                .accessibilityIdentifier("analysis.find-related-evidence")
+                            if case .remote(let provider) = route {
+                                Text("Sends your confirmed phrases and work library to \(provider.name).")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                         Text("Evidence is shown for review only; CVee never inserts it automatically.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -3378,9 +3496,24 @@ struct ResumeAnalysisSheet: View {
                 ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { phraseFocused = false } }
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { finish() } }
             }
-            .onAppear { load() }
+            .onAppear { route = .current(); load() }
             .onDisappear { suggestionTask?.cancel() }
+            .sheet(isPresented: $showingProvider, onDismiss: { route = .current() }) {
+                NavigationStack {
+                    AIProviderView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showingProvider = false }.accessibilityIdentifier("analysis.provider-done") } }
+                }
+            }
         }
+    }
+
+    /// Offered in place of a suggestion button when neither Apple Intelligence nor a remote provider can run.
+    @ViewBuilder
+    private func chooseProviderButton(identifier: String) -> some View {
+        Button("Choose an AI provider") { showingProvider = true }
+            .accessibilityIdentifier(identifier)
+        Text("Apple Intelligence isn’t available right now. Choose OpenAI, Gemini, or Claude to get suggestions.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
     }
 
     private var coverageSection: some View {
@@ -3389,6 +3522,21 @@ struct ResumeAnalysisSheet: View {
                 Text("The job description changed. Review and save the retained phrases before coverage is calculated.")
                     .foregroundStyle(.orange)
             } else if let report, report.reviewedCount > 0 {
+                if let percentage = report.matchPercentage {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("\(percentage)%")
+                            .font(.largeTitle.weight(.bold))
+                            .monospacedDigit()
+                            .foregroundStyle(CVeeColors.ink)
+                        ProgressView(value: Double(percentage), total: 100)
+                            .tint(CVeeColors.coral)
+                    }
+                    .padding(.vertical, 4)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Resume match")
+                    .accessibilityValue("\(percentage)%")
+                    .accessibilityIdentifier("analysis.match-meter")
+                }
                 Text("\(report.mentionedCount) of \(report.reviewedCount) reviewed requirements mentioned.")
                     .font(.headline)
                     .accessibilityIdentifier("analysis.coverage-summary")
@@ -3442,9 +3590,18 @@ struct ResumeAnalysisSheet: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
-            Button(isSuggesting ? "Suggesting with Apple Intelligence…" : "Suggest with Apple Intelligence") { suggestRequirements() }
-                .disabled(isSuggesting)
-                .accessibilityIdentifier("analysis.suggest-requirements")
+            if let name = route.providerName {
+                Button(isSuggesting ? "Suggesting with \(name)…" : "Suggest with \(name)") { suggestRequirements() }
+                    .disabled(isSuggesting)
+                    .accessibilityIdentifier("analysis.suggest-requirements")
+                if case .remote(let provider) = route {
+                    Text("Sends the job description to \(provider.name).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                chooseProviderButton(identifier: "analysis.configure-provider")
+            }
             HStack {
                 TextField("Add exact phrase", text: $newPhrase)
                     .focused($phraseFocused).submitLabel(.done).onSubmit { phraseFocused = false }
@@ -3537,12 +3694,14 @@ struct ResumeAnalysisSheet: View {
         guard !isSuggesting else { return }
         suggestionTask?.cancel()
         isSuggesting = true
+        let route = route
+        let name = route.providerName ?? AIProvider.apple.name
         suggestionTask = Task { @MainActor in
             do {
-                let values = try await OnDeviceAnalysisSuggestionService().suggestRequirements(from: description)
+                let values = try await AnalysisSuggestionService(route: route).suggestRequirements(from: description)
                 guard !Task.isCancelled else { return }
                 values.forEach { add($0.phrase) }
-                message = "Apple Intelligence suggestions were added for your review."
+                message = "\(name) suggestions were added for your review."
             } catch is CancellationError { return
             } catch { if !Task.isCancelled { message = error.localizedDescription } }
             if !Task.isCancelled { isSuggesting = false }
@@ -3556,11 +3715,15 @@ struct ResumeAnalysisSheet: View {
         }
         suggestionTask?.cancel()
         isSuggesting = true
+        let route = route
+        let name = route.providerName ?? AIProvider.apple.name
         suggestionTask = Task { @MainActor in
             do {
-                aiEvidence = try await OnDeviceAnalysisSuggestionService().suggestEvidence(requirements: requirements, passages: workLibrary.map(\.achievement))
+                let evidence = try await AnalysisSuggestionService(route: route).suggestEvidence(requirements: requirements, passages: workLibrary.map(\.achievement))
                 guard !Task.isCancelled else { return }
-                message = aiEvidence.isEmpty ? "Apple Intelligence found no additional evidence." : "Apple Intelligence evidence is ready for review."
+                aiEvidence = evidence
+                evidenceSource = name
+                message = aiEvidence.isEmpty ? "\(name) found no additional evidence." : "\(name) evidence is ready for review."
             } catch is CancellationError { return
             } catch { if !Task.isCancelled { message = error.localizedDescription } }
             if !Task.isCancelled { isSuggesting = false }

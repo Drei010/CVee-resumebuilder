@@ -4,6 +4,19 @@ Dated history of shipped changes, newest first. Dated entries come from the git 
 
 ## 2026-10-19
 
+### Resume Wizard, round three
+
+Captures: [design-audit/2026-10-19-wizard-round-three/](design-audit/2026-10-19-wizard-round-three/) (11 iPhone and 11 iPad screens).
+
+- On iPhone the "Resume Wizard" title moves from its own large-title row into the navigation bar beside the Back chevron (at the leading edge on Profile). iPad keeps the large title, because its bar shares a row with the tab bar.
+- With an empty work library the mascot's bubble says "No tasks added yet", and with no saved jobs "No jobs saved yet"; the empty state below keeps only its title and a coral Add experience or Add job.
+- When a job search or filter matches nothing, Target Job offers a coral Add job above "Clear search and filters", and the trailing Add job row hides while an empty state shows.
+- Wizard errors (a baseline that can't be used, generation, and saving) show in a popup with the mascot, a title for the step, the message, and OK, instead of inline red text. The save failure now reads "Your draft is kept." followed by the error.
+- The resume report opens with the mascot and a bubble for its state, and shows the resume match: the share of confirmed job phrases found in the resume, as a "Resume match" row in the top card and a percentage with a progress bar above the coverage summary. It is not an ATS score.
+- When Apple Intelligence is unavailable, the report's "Suggest" and "Find related evidence" buttons use the remote provider selected in Profile (OpenAI, Gemini, or Claude with a saved key) and name it, with a caption saying what is sent; with no usable provider they offer "Choose an AI provider". Responses wrapped in code fences or text now parse.
+- Fix: leaving the LaTeX editor no longer leaves escapes such as "83\%" and "SKILLS \& ABILITIES" in the draft.
+- New UI tests cover the error popup, the empty-library bubbles, Add job when nothing matches, the report's mascot and match percentage, and the provider choice without Apple Intelligence (`-ui-testing-apple-intelligence-unavailable`); new unit tests cover the match percentage, the suggestion route, response parsing and validation, and the LaTeX round trip.
+
 ### Resume Wizard, round two
 
 Captures: [design-audit/2026-10-19-wizard-round-two/](design-audit/2026-10-19-wizard-round-two/) (14 iPhone screens).

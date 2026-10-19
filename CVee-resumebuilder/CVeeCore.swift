@@ -271,6 +271,9 @@ enum ModelAvailabilityState: Equatable {
 
 struct FoundationModelsAvailability {
     func state() -> ModelAvailabilityState {
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing-apple-intelligence-unavailable") {
+            return .unavailable("Turn on Apple Intelligence in Settings to generate resumes.")
+        }
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             switch SystemLanguageModel.default.availability {
