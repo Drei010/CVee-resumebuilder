@@ -786,7 +786,8 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertFalse(app.buttons["analysis.recheck"].exists)
         XCTAssertFalse(app.buttons["analysis.save-requirements-toolbar"].exists)
         let saveRequirements = app.buttons["analysis.save-requirements"]
-        XCTAssertTrue(saveRequirements.waitForExistence(timeout: timeout))
+        // The report's list only loads rows near the screen, and on iPad this one starts below the sheet's visible rows.
+        XCTAssertTrue(revealHittable(saveRequirements, in: app))
         // Measured against the report's own bar: on iPad the report is a sheet narrower than the window.
         XCTAssertGreaterThan(saveRequirements.frame.width, app.navigationBars["Resume report"].frame.width * 0.75, "Save requirements spans its row")
         XCTAssertTrue(tapWhenHittable(saveRequirements, in: app))
