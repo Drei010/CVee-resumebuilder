@@ -1110,7 +1110,11 @@ final class ResumeWizardUITests: XCTestCase {
         let clear = app.buttons["wizard.jobs.clear-filters"]
         XCTAssertTrue(addJob.exists)
         XCTAssertTrue(clear.exists)
-        XCTAssertLessThan(addJob.frame.midY, clear.frame.midY, "Add job sits above Clear search and filters")
+        // Both sit fully above the bottom bar without scrolling, Add job first.
+        let bar = app.descendants(matching: .any)["wizard.bottom-bar"]
+        XCTAssertLessThanOrEqual(addJob.frame.maxY, bar.frame.minY)
+        XCTAssertLessThanOrEqual(clear.frame.maxY, bar.frame.minY, "Clear search and filters stays above the bottom bar")
+        XCTAssertTrue(addJob.frame.maxX <= clear.frame.minX || addJob.frame.maxY <= clear.frame.minY, "Add job comes first")
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Add job'")).count, 1, "The trailing Add job row hides")
         capture(app, "wizard-no-matching-jobs")
         addJob.tap()

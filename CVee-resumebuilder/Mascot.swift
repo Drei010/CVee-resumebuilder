@@ -332,7 +332,9 @@ struct MascotErrorPopup: View {
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture { }
+                .onTapGesture {
+                    // Swallows taps, so the backdrop never dismisses the popup; only OK does.
+                }
                 .accessibilityHidden(true)
             VStack(spacing: 12) {
                 MascotView(mood: .curious, size: MascotMetrics.prominentSize)

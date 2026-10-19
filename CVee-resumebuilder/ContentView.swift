@@ -2853,20 +2853,16 @@ struct NewResumeView: View {
                     ContentUnavailableView {
                         Label(jobs.isEmpty ? "No saved jobs" : "No matching jobs", systemImage: "briefcase")
                     } description: {
-                        // With no saved jobs the bubble above already says what to do.
-                        if !(jobs.isEmpty && showsMascot) {
-                            Text(jobs.isEmpty ? "Add a job description to continue." : "Try a different search or filter.")
-                        }
+                        // With no saved jobs the bubble above already says what to do, and with no matches
+                        // Clear search and filters does; leaving the line out keeps that button above the
+                        // bottom bar on iPhone.
+                        if jobs.isEmpty && !showsMascot { Text("Add a job description to continue.") }
                     }
                     actions: {
-                        // Styled buttons take only their own taps inside the form row. Add job is coral, as on Saved Jobs.
-                        Button("Add job") { jobCountBeforeAdd = jobs.count; showingAddJob = true }
-                            .buttonStyle(CoralButtonStyle())
-                            .accessibilityIdentifier("wizard.jobs.empty-add-job")
-                        if !jobs.isEmpty {
-                            Button("Clear search and filters") { jobSearch = ""; jobCompany = "All companies"; jobStatus = "All statuses" }
-                                .buttonStyle(.borderless)
-                                .accessibilityIdentifier("wizard.jobs.clear-filters")
+                        // Side by side when they fit, so the way out of a search stays above the bottom bar.
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 16) { jobEmptyActions }
+                            VStack(spacing: 12) { jobEmptyActions }
                         }
                     }
                 }
@@ -2896,6 +2892,20 @@ struct NewResumeView: View {
                 }
             }
         }.formStyle(.grouped).modifier(WorkspaceSurface())
+    }
+
+    /// Add job, then Clear search and filters while a search or filter hides every job. Styled buttons
+    /// take only their own taps inside the form row; Add job is coral, as on Saved Jobs.
+    @ViewBuilder
+    private var jobEmptyActions: some View {
+        Button("Add job") { jobCountBeforeAdd = jobs.count; showingAddJob = true }
+            .buttonStyle(CoralButtonStyle())
+            .accessibilityIdentifier("wizard.jobs.empty-add-job")
+        if !jobs.isEmpty {
+            Button("Clear search and filters") { jobSearch = ""; jobCompany = "All companies"; jobStatus = "All statuses" }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("wizard.jobs.clear-filters")
+        }
     }
 
     private var summaryPage: some View {
