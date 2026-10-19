@@ -33,7 +33,7 @@ When a fact changes, update the file that owns it and link to it elsewhere inste
   - `StructuredResume.swift`, `StructuredResumeEditor.swift` — the structured resume document, converter, renderer, LaTeX import, and section editor.
   - `ResumeAnalysis.swift` — phrase coverage, document health, and Apple Intelligence suggestions for the resume report.
   - `TaskMetrics.swift` — the Tasks progress widgets.
-  - `Mascot.swift` — the dog mascot, its animation, and its speech bubble, used on Tasks (leaning on the quick capture card) and Saved Jobs.
+  - `Mascot.swift` — the dog mascot, its animation, and its speech bubble, used on Tasks (leaning on the quick capture card), Saved Jobs, and the Resume Wizard (above its progress bar).
   - `CVeeIntents.swift` — App Shortcuts.
   - `CVee_resumebuilderApp.swift` — app entry, model container, and test launch arguments.
 - `ShareExtension/`, `ShareExtension-Info.plist` — the "Save to CVee" share extension.
