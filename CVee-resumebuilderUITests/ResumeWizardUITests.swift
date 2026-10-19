@@ -627,10 +627,13 @@ final class ResumeWizardUITests: XCTestCase {
         let next = app.buttons["wizard.next"]
         XCTAssertTrue(next.waitForExistence(timeout: timeout))
         XCTAssertFalse(next.isEnabled)
+        let mascot = app.descendants(matching: .any)["wizard.mascot"]
+        XCTAssertTrue(mascot.waitForExistence(timeout: timeout))
         let fullName = app.textFields["wizard.full-name"]
         XCTAssertTrue(fullName.waitForExistence(timeout: timeout))
         XCTAssertTrue(fullName.isHittable)
         fullName.tap()
+        XCTAssertTrue(waitForDisappearance(mascot), "The mascot hides while typing")
         fullName.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64))
         fullName.typeText("Test User")
         fullName.typeText("\n")
@@ -642,8 +645,14 @@ final class ResumeWizardUITests: XCTestCase {
         let enabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: next)
         wait(for: [enabled], timeout: timeout)
         XCTAssertFalse(app.buttons["wizard.start-over"].exists, "Discarding a draft is only offered on the Resume step")
+        dismissKeyboard(in: app)
         next.tap()
         XCTAssertTrue(app.descendants(matching: .any)["wizard.work-library"].waitForExistence(timeout: timeout))
+        // An empty library offers only Add experience, with no Add task row or select-all box.
+        XCTAssertTrue(mascot.waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.buttons["Add experience"].exists)
+        XCTAssertFalse(app.buttons["Add task"].exists)
+        XCTAssertFalse(app.buttons["wizard.experience.select-all"].exists)
         let back = app.buttons["wizard.back"]
         XCTAssertTrue(back.waitForExistence(timeout: timeout))
         back.tap()
@@ -711,6 +720,13 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertLessThan(abs(next.frame.width - app.frame.width), 48, "Continue spans the bottom bar")
         let task = wizardTaskRows(in: app).firstMatch
         XCTAssertTrue(task.waitForExistence(timeout: timeout))
+        // The header checkbox selects every task shown, then clears them.
+        let selectAll = app.buttons["wizard.experience.select-all"]
+        XCTAssertTrue(selectAll.exists)
+        selectAll.tap()
+        XCTAssertTrue(app.staticTexts["\(wizardTaskRows(in: app).count) selected"].waitForExistence(timeout: timeout))
+        selectAll.tap()
+        XCTAssertTrue(app.staticTexts["0 selected"].waitForExistence(timeout: timeout))
         task.tap()
         XCTAssertTrue(app.staticTexts["1 selected"].waitForExistence(timeout: timeout))
         task.tap()
@@ -725,6 +741,10 @@ final class ResumeWizardUITests: XCTestCase {
         job.firstMatch.tap()
         app.buttons["wizard.next"].tap()
         XCTAssertTrue(app.buttons["wizard.edit-profile"].waitForExistence(timeout: timeout))
+        // The edit buttons are icons on the leading side of each review row.
+        for id in ["wizard.edit-profile", "wizard.edit-experience", "wizard.edit-job"] {
+            XCTAssertLessThan(app.buttons[id].frame.midX, app.frame.midX, id)
+        }
         let editExperience = app.buttons["wizard.edit-experience"]
         XCTAssertTrue(editExperience.waitForExistence(timeout: timeout))
         let editJob = app.buttons["wizard.edit-job"]
@@ -744,7 +764,13 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(checkMatch.waitForExistence(timeout: timeout))
         let saveResume = app.buttons["wizard.save-resume"]
         XCTAssertTrue(saveResume.waitForExistence(timeout: timeout))
-        XCTAssertLessThan(abs(saveResume.frame.midY - checkMatch.frame.midY), 8)
+        // Edit and Match sit beside Discard draft above the preview; Save Resume spans the bottom bar.
+        let discard = app.buttons["wizard.start-over"]
+        XCTAssertTrue(discard.exists)
+        XCTAssertLessThan(abs(discard.frame.midY - checkMatch.frame.midY), 8)
+        XCTAssertLessThan(abs(app.buttons["wizard.edit-resume"].frame.midY - checkMatch.frame.midY), 8)
+        XCTAssertLessThan(checkMatch.frame.maxY, preview.frame.minY)
+        XCTAssertLessThan(abs(saveResume.frame.width - app.frame.width), 48, "Save Resume spans the bottom bar")
         checkMatch.tap()
         XCTAssertTrue(app.navigationBars["Resume report"].waitForExistence(timeout: timeout))
         let requirement = app.textFields["analysis.new-phrase"]
@@ -757,12 +783,14 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(tapWhenHittable(addPhrase, in: app))
         XCTAssertTrue(app.staticTexts["Python"].waitForExistence(timeout: timeout))
         dismissKeyboard(in: app)
-        let toolbarSave = app.buttons["analysis.save-requirements-toolbar"]
-        if toolbarSave.waitForExistence(timeout: 2) {
-            XCTAssertTrue(tapAction(toolbarSave, in: app))
-        } else {
-            XCTAssertTrue(tapWhenHittable(app.buttons["analysis.save-requirements"], in: app))
-        }
+        XCTAssertFalse(app.buttons["analysis.recheck"].exists)
+        XCTAssertFalse(app.buttons["analysis.save-requirements-toolbar"].exists)
+        let saveRequirements = app.buttons["analysis.save-requirements"]
+        // The report's list only loads rows near the screen, and on iPad this one starts below the sheet's visible rows.
+        XCTAssertTrue(revealHittable(saveRequirements, in: app))
+        // Measured against the report's own bar: on iPad the report is a sheet narrower than the window.
+        XCTAssertGreaterThan(saveRequirements.frame.width, app.navigationBars["Resume report"].frame.width * 0.75, "Save requirements spans its row")
+        XCTAssertTrue(tapWhenHittable(saveRequirements, in: app))
         let coverage = app.staticTexts["analysis.coverage-summary"]
         XCTAssertTrue(reveal(coverage, in: app))
         XCTAssertEqual(coverage.label, "1 of 1 reviewed requirements mentioned.")
@@ -900,6 +928,7 @@ final class ResumeWizardUITests: XCTestCase {
         selectTab("Resume Wizard", in: app)
         let name = app.textFields["wizard.full-name"]
         XCTAssertTrue(revealBelow(name, in: app))
+        XCTAssertFalse(app.descendants(matching: .any)["wizard.mascot"].exists, "No mascot at accessibility text sizes")
         name.tap(); name.typeText("A very long candidate name\n")
         let email = app.textFields["wizard.email"]
         XCTAssertTrue(revealBelow(email, in: app))
@@ -1087,8 +1116,11 @@ final class ResumeWizardUITests: XCTestCase {
                 // Past the first step, content under the wizard's bottom bar is scrolled up first.
                 let back = app.buttons["wizard.back"]
                 let bar = app.descendants(matching: .any)["wizard.bottom-bar"]
-                if back.exists, bar.exists, !["wizard.back", "wizard.next", "wizard.generate", "wizard.save-resume", "wizard.edit-resume", "wizard.check-job-match"].contains(element.identifier), element.frame.midY >= bar.frame.minY - 12 {
-                    app.swipeUp()
+                if back.exists, bar.exists, !["wizard.back", "wizard.next", "wizard.generate", "wizard.save-resume"].contains(element.identifier), element.frame.midY >= bar.frame.minY - 12 {
+                    // A short, slow drag: a full swipe can fling a nearby row past the top of the list.
+                    let lower = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.68))
+                    let upper = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.48))
+                    lower.press(forDuration: 0.1, thenDragTo: upper, withVelocity: .slow, thenHoldForDuration: 0.3)
                     continue
                 }
                 if element.isHittable && element.isEnabled {

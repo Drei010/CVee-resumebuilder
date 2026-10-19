@@ -95,15 +95,29 @@ private struct SelectionCircle: View {
 /// The multi-select counterpart of `SelectionCircle`: a square checkbox for lists where several
 /// rows can be chosen at once, such as the wizard's Experience step.
 private struct SelectionCheckbox: View {
-    let isSelected: Bool
+    /// `mixed` is for a select-all box when only some of its rows are selected.
+    enum State { case none, mixed, selected }
+    let state: State
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(isSelected: Bool) { state = isSelected ? .selected : .none }
+    init(state: State) { self.state = state }
+
+    private var symbol: String {
+        switch state {
+        case .none: return "square"
+        case .mixed: return "minus.square.fill"
+        case .selected: return "checkmark.square.fill"
+        }
+    }
+
     var body: some View {
-        Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+        Image(systemName: symbol)
             .font(.title3)
-            .foregroundStyle(isSelected ? CVeeColors.green : CVeeColors.secondary)
-            .scaleEffect(isSelected ? 1.05 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isSelected)
-            .sensoryFeedback(.selection, trigger: isSelected)
+            .foregroundStyle(state == .none ? CVeeColors.secondary : CVeeColors.green)
+            .scaleEffect(state == .none ? 1 : 1.05)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: state)
+            .sensoryFeedback(.selection, trigger: state)
             .accessibilityHidden(true)
     }
 }
@@ -2408,7 +2422,9 @@ struct NewResumeView: View {
     @State private var showingAnalysis = false
     @State private var showingOptionalProfile = false
     @Environment(\.dynamicTypeSize) private var wizardTypeSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var keyboardVisible = false
     @State private var didLoadProfile = false
     @State private var reviewingJob: JobTarget?
     @State private var showingProvider = false
@@ -2454,7 +2470,25 @@ struct NewResumeView: View {
         if job.captureReviewState == .needsReview { return "Needs review" }
         return "Ready for resume"
     }
-    private var mascotMood: MascotMood { step == .start ? .curious : step == .generated ? .joyful : .wink }
+    private var mascotMood: MascotMood {
+        switch step {
+        case .start: return .curious
+        case .generated: return .joyful
+        default: return .wink
+        }
+    }
+    /// The mascot's line for each step; the bubble's message is the step guidance.
+    private var mascotTitle: String {
+        switch step {
+        case .start: return "Let’s tailor your resume"
+        case .workLibrary: return "Pick your strongest work"
+        case .jobDescription: return "Choose your target job"
+        case .summary: return "Ready when you are"
+        case .generated: return "Your draft is ready"
+        }
+    }
+    /// The bubble shows in portrait at standard text sizes and hides while typing, so fields keep the room.
+    private var showsMascot: Bool { !wizardTypeSize.isAccessibilitySize && verticalSizeClass != .compact && focusedField == nil && !keyboardVisible }
     private var profileIsValid: Bool { !draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !draftEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var canAdvance: Bool {
         switch step {
@@ -2468,6 +2502,13 @@ struct NewResumeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if showsMascot {
+                MascotSpeechBubble(mood: mascotMood, title: mascotTitle, message: step.guidance,
+                                   accessibilityID: "wizard.mascot", mascotSize: MascotMetrics.prominentSize)
+                    .padding(.horizontal, 16).padding(.top, 4)
+                    .frame(maxWidth: 760)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: mascotMood)
+            }
             progressHeader
             Group {
                 switch step {
@@ -2503,14 +2544,7 @@ struct NewResumeView: View {
                 AIProviderView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showingProvider = false } } }
             }
         }
-        .alert("Replace unsaved draft?", isPresented: $showingReplaceDraft) {
-            Button("Generate replacement") { Task { await generate() } }.accessibilityIdentifier("wizard.confirm-replacement")
-            Button("Keep draft", role: .cancel) { }
-        } message: { Text("Your current draft stays available until the replacement is generated successfully.") }
-        .alert("Discard this draft?", isPresented: $showingStartOver) {
-            Button("Discard draft", role: .destructive) { resetWizard() }
-            Button("Keep working", role: .cancel) { }
-        } message: { Text("This discards the current wizard session and starts a new resume. Saved resumes are retained.") }
+        .background { wizardAlerts }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 if step != .start {
@@ -2519,18 +2553,6 @@ struct NewResumeView: View {
                         .accessibilityLabel("Back")
                         .accessibilityHint("Returns to the previous step")
                         .accessibilityIdentifier("wizard.back")
-                }
-            }
-            // The large title row carries the mascot on its trailing side, where Start over was.
-            ToolbarItem(placement: .largeTitle) {
-                HStack(alignment: .center, spacing: 12) {
-                    Text("Resume Wizard")
-                        .font(.largeTitle.bold())
-                        .foregroundStyle(CVeeColors.ink)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 0)
-                    MascotView(mood: mascotMood, size: 56)
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: mascotMood)
                 }
             }
             ToolbarItem(placement: .topBarLeading) {
@@ -2544,6 +2566,23 @@ struct NewResumeView: View {
         .onChange(of: errorMessage) { _, message in
             if let message { UIAccessibility.post(notification: .announcement, argument: message) }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardVisible = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardVisible = false }
+    }
+
+    /// The wizard's confirmations. They hang off a clear background with an ink tint, so the
+    /// cancel actions read in black (white in dark appearance) rather than in the accent.
+    private var wizardAlerts: some View {
+        Color.clear
+            .alert("Replace unsaved draft?", isPresented: $showingReplaceDraft) {
+                Button("Generate replacement") { Task { await generate() } }.accessibilityIdentifier("wizard.confirm-replacement")
+                Button("Keep draft", role: .cancel) { }
+            } message: { Text("Your current draft stays available until the replacement is generated successfully.") }
+            .alert("Discard this draft?", isPresented: $showingStartOver) {
+                Button("Discard draft", role: .destructive) { resetWizard() }
+                Button("Keep working", role: .cancel) { }
+            } message: { Text("This discards the current wizard session and starts a new resume. Saved resumes are retained.") }
+            .tint(CVeeColors.ink)
     }
 
     private var progressHeader: some View {
@@ -2560,7 +2599,7 @@ struct NewResumeView: View {
                         .frame(height: 2)
                 }
             }
-            if focusedField == nil {
+            if !showsMascot && focusedField == nil {
                 Text(step.guidance)
                     .font(.caption)
                     .foregroundStyle(CVeeColors.secondary)
@@ -2570,7 +2609,7 @@ struct NewResumeView: View {
         .padding(.horizontal, 18).padding(.vertical, 12)
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("wizard.progress")
-        .accessibilityLabel("Step \(step.rawValue + 1) of \(ResumeWizardStep.allCases.count): \(step.title). \(step.guidance)")
+        .accessibilityLabel("Step \(step.rawValue + 1) of \(ResumeWizardStep.allCases.count): \(step.title)" + (showsMascot ? "" : ". \(step.guidance)"))
     }
 
     private var startPage: some View {
@@ -2646,31 +2685,56 @@ struct NewResumeView: View {
                     ForEach(filteredExperiences) { experience in
                         let isSelected = selectedExperienceIDs.contains(experience.id)
                         Button { toggleExperience(experience.id) } label: {
-                            HStack {
+                            HStack(spacing: 12) {
+                                SelectionCheckbox(isSelected: isSelected)
                                 VStack(alignment: .leading) {
                                     Text(experience.tasks.first ?? "No task details").font(.subheadline.weight(.medium)).lineLimit(3)
                                     Text(experience.jobTitle).font(.caption).foregroundStyle(CVeeColors.secondary)
                                     MetadataPill(text: experience.company)
                                 }
-                                Spacer()
-                                SelectionCheckbox(isSelected: isSelected)
+                                Spacer(minLength: 0)
                             }
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Includes or removes this task from the resume")
                         .accessibilityValue(isSelected ? "Selected" : "Not selected")
                         .accessibilityIdentifier("wizard.task.\(experience.id.uuidString)")
                     }
-                    Menu { Button("Add manually") { taskCountBeforeAdd = experiences.count; showingAddTask = true }; Button("Import Tasks List") { showingImport = true } } label: { Label("Add task", systemImage: "plus") }
+                    // An empty library already offers Add experience above.
+                    if !experiences.isEmpty {
+                        Menu { Button("Add manually") { taskCountBeforeAdd = experiences.count; showingAddTask = true }; Button("Import Tasks List") { showingImport = true } } label: { Label("Add task", systemImage: "plus") }
+                    }
                 } header: {
-                    HStack {
+                    HStack(spacing: 0) {
+                        if !filteredExperiences.isEmpty { selectAllCheckbox }
                         Text("Work Library")
                         Spacer()
                         Text("\(selectedExperiences.count) selected").monospacedDigit()
                     }
                 }
             }.formStyle(.grouped).modifier(WorkspaceSurface())
-        }.accessibilityIdentifier("wizard.work-library")
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("wizard.work-library")
+    }
+
+    /// Selects or clears every task the search and filter show. Checked when all of them are
+    /// selected, a dash when some are, empty when none are.
+    private var selectAllCheckbox: some View {
+        let ids = Set(filteredExperiences.map(\.id))
+        let selectedCount = ids.intersection(selectedExperienceIDs).count
+        let state: SelectionCheckbox.State = selectedCount == ids.count ? .selected : selectedCount > 0 ? .mixed : .none
+        return Button {
+            if state == .selected { selectedExperienceIDs.subtract(ids) } else { selectedExperienceIDs.formUnion(ids) }
+        } label: {
+            SelectionCheckbox(state: state)
+                .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Select all")
+        .accessibilityValue(state == .selected ? "Selected" : state == .mixed ? "Partly selected" : "Not selected")
+        .accessibilityHint(state == .selected ? "Clears every task shown" : "Selects every task shown")
+        .accessibilityIdentifier("wizard.experience.select-all")
     }
 
     /// The Saved Jobs search card and its Company and Status filters, below the step header.
@@ -2720,7 +2784,7 @@ struct NewResumeView: View {
         VStack(spacing: 0) {
             if !jobs.isEmpty { jobSearchBar }
             jobList
-        }.accessibilityIdentifier("wizard.job-description")
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("wizard.job-description")
     }
 
     private var jobList: some View {
@@ -2737,7 +2801,8 @@ struct NewResumeView: View {
                 }
                 ForEach(filteredJobs) { job in
                     Button { if job.isUsableForResume { selectedJobID = job.id } else { reviewingJob = job } } label: {
-                        HStack {
+                        HStack(spacing: 12) {
+                            SelectionCircle(isSelected: selectedJobID == job.id)
                             VStack(alignment: .leading) {
                                 Text(job.displayTitle).font(.headline)
                                 Text(job.displayCompany).foregroundStyle(.secondary)
@@ -2745,9 +2810,9 @@ struct NewResumeView: View {
                                     .font(.caption).foregroundStyle(.secondary).lineLimit(3)
                                 if !job.isUsableForResume { Text(job.hasDescription ? "Needs review" : "Needs description").font(.caption.weight(.medium)).foregroundStyle(.orange) }
                             }
-                            Spacer()
-                            SelectionCircle(isSelected: selectedJobID == job.id)
+                            Spacer(minLength: 0)
                         }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint(job.isUsableForResume ? "Selects this target job" : "Opens job details to complete and review the description")
@@ -2787,19 +2852,25 @@ struct NewResumeView: View {
     }
 
     private var generatedPage: some View {
+        VStack(spacing: 0) {
+            // Pinned above the draft, so Preview stays in reach while the editor scrolls.
+            if generatedDraft != nil { draftActions.padding(.horizontal).padding(.vertical, 8) }
+            generatedScroll
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("wizard.generated")
+        .onChange(of: generatedText) { _, _ in isSaved = false }
+        .onChange(of: generatedLaTeX) { _, source in if generatedEditorMode == .latex { generatedText = ResumeLaTeXFormatter.attributedText(from: source).string } }
+        .sheet(isPresented: $showingAnalysis) {
+            ResumeAnalysisSheet(resumeName: generatedDraft?.name ?? "Draft resume", attributedText: ResumeTextFormatter.format(generatedText), job: generatedJob, workLibrary: experiences.map { ResumeAnalysisWorkEntry(id: $0.id, role: $0.jobTitle, company: $0.company, achievement: $0.tasks.joined(separator: "\n"), includedInResume: generatedExperienceIDs.contains($0.id)) })
+        }
+    }
+
+    private var generatedScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let errorMessage { Text(errorMessage).foregroundStyle(.red).accessibilityIdentifier("wizard.draft-error") }
                 if generatedDraft != nil {
-                    HStack {
-                        Spacer(minLength: 0)
-                        Button("Discard draft", role: .destructive) { showingStartOver = true }
-                            .buttonStyle(.bordered)
-                            .frame(minHeight: 44)
-                            .disabled(isLoading)
-                            .accessibilityHint("Discards this draft and starts a new resume")
-                            .accessibilityIdentifier("wizard.start-over")
-                    }
                     if generatedInputSignature != inputSignature {
                         Text("This draft reflects earlier inputs. Go back to review and generate a replacement.").font(.caption).foregroundStyle(CVeeColors.secondary)
                     }
@@ -2837,27 +2908,50 @@ struct NewResumeView: View {
             }
             .padding()
         }
-        .accessibilityIdentifier("wizard.generated")
-        .onChange(of: generatedText) { _, _ in isSaved = false }
-        .onChange(of: generatedLaTeX) { _, source in if generatedEditorMode == .latex { generatedText = ResumeLaTeXFormatter.attributedText(from: source).string } }
-        .sheet(isPresented: $showingAnalysis) {
-            ResumeAnalysisSheet(resumeName: generatedDraft?.name ?? "Draft resume", attributedText: ResumeTextFormatter.format(generatedText), job: generatedJob, workLibrary: experiences.map { ResumeAnalysisWorkEntry(id: $0.id, role: $0.jobTitle, company: $0.company, achievement: $0.tasks.joined(separator: "\n"), includedInResume: generatedExperienceIDs.contains($0.id)) })
+    }
+
+    /// Edit, Match and Discard draft in one trailing row; it scrolls sideways when large text needs the width.
+    private var draftActions: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                draftActionButtons
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) { draftActionButtons }
+            }
         }
     }
 
-    private var generatedActions: some View {
-        ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 8) {
-                            Button(isEditingGenerated ? "Preview" : "Edit") { toggleGeneratedEditing() }.buttonStyle(.bordered).accessibilityLabel(isEditingGenerated ? "Preview resume" : "Edit resume").accessibilityIdentifier("wizard.edit-resume")
-                            Button("Match") { showingAnalysis = true }.buttonStyle(.bordered).accessibilityLabel("Check job match").accessibilityIdentifier("wizard.check-job-match")
-                            compactSaveButton
-                        }
-                        VStack(alignment: .leading, spacing: 10) {
-                            Button(isEditingGenerated ? "Preview resume" : "Edit resume") { toggleGeneratedEditing() }.buttonStyle(.bordered).accessibilityIdentifier("wizard.edit-resume")
-                            Button("Check job match") { showingAnalysis = true }.buttonStyle(.bordered).accessibilityIdentifier("wizard.check-job-match")
-                            saveButton
-                        }
-                    }
+    @ViewBuilder
+    private var draftActionButtons: some View {
+        editResumeButton
+        matchButton
+        discardDraftButton
+    }
+
+    private var editResumeButton: some View {
+        Button(isEditingGenerated ? "Preview" : "Edit") { toggleGeneratedEditing() }
+            .buttonStyle(.bordered).frame(minHeight: 44)
+            .disabled(isLoading)
+            .accessibilityLabel(isEditingGenerated ? "Preview resume" : "Edit resume")
+            .accessibilityIdentifier("wizard.edit-resume")
+    }
+
+    private var matchButton: some View {
+        Button("Match") { showingAnalysis = true }
+            .buttonStyle(.bordered).frame(minHeight: 44)
+            .disabled(isLoading)
+            .accessibilityLabel("Check job match")
+            .accessibilityIdentifier("wizard.check-job-match")
+    }
+
+    private var discardDraftButton: some View {
+        Button("Discard draft", role: .destructive) { showingStartOver = true }
+            .buttonStyle(.bordered).frame(minHeight: 44)
+            .disabled(isLoading)
+            .accessibilityHint("Discards this draft and starts a new resume")
+            .accessibilityIdentifier("wizard.start-over")
     }
 
     private var navigationBar: some View {
@@ -2874,7 +2968,7 @@ struct NewResumeView: View {
                     Text(isLoading ? "Generating…" : generatedDraft == nil ? "Generate Resume" : "Generate replacement").frame(maxWidth: .infinity)
                 }.buttonStyle(CoralButtonStyle()).disabled(!canAdvance).accessibilityIdentifier("wizard.generate")
             } else if step == .generated {
-                HStack { Spacer(minLength: 0); generatedActions }
+                saveButton
             } else {
                 Button { advance() } label: { Text("Continue").frame(maxWidth: .infinity) }
                     .buttonStyle(CoralButtonStyle()).disabled(!canAdvance || isLoading).accessibilityIdentifier("wizard.next")
@@ -2896,10 +2990,21 @@ struct NewResumeView: View {
     }
 
     private func reviewRow(_ title: String, value: String, identifier: String, action: @escaping () -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.caption).foregroundStyle(CVeeColors.secondary)
-            Text(value).font(.body)
-            Button("Edit \(title.lowercased())", action: action).frame(minHeight: 44).accessibilityIdentifier(identifier)
+        HStack(spacing: 12) {
+            Button(action: action) {
+                Image(systemName: "pencil")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Edit \(title.lowercased())")
+            .accessibilityIdentifier(identifier)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.caption).foregroundStyle(CVeeColors.secondary)
+                Text(value).font(.body)
+            }
+            Spacer(minLength: 0)
         }
     }
 
@@ -2931,16 +3036,10 @@ struct NewResumeView: View {
     }
 
     private var saveButton: some View {
-        Button(isSaved ? "Saved to Resumes" : "Save Resume") { saveGeneratedResume() }
+        Button { saveGeneratedResume() } label: { Text(isSaved ? "Saved to Resumes" : "Save Resume").frame(maxWidth: .infinity) }
             .buttonStyle(CoralButtonStyle())
             .disabled(isSaved || generatedDraft == nil)
             .accessibilityIdentifier("wizard.save-resume")
-    }
-
-    private var compactSaveButton: some View {
-        saveButton
-            .buttonStyle(CoralButtonStyle(horizontalPadding: 12))
-            .accessibilityLabel(isSaved ? "Saved to Resumes" : "Save Resume")
     }
 
     private func loadProfileDraft() { draftName = profileName; draftEmail = profileEmail; draftPhone = profilePhone; draftLocation = profileLocation; draftLinkedIn = profileLinkedIn; draftGitHub = profileGitHub; draftEducation = profileEducation; draftSkills = profileSkills; draftCertifications = profileCertifications }
@@ -3278,13 +3377,6 @@ struct ResumeAnalysisSheet: View {
             .toolbar {
                 ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { phraseFocused = false } }
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { finish() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    if isEditingRequirements || !isChecklistSaved {
-                        Button("Save") { saveRequirements() }
-                            .accessibilityIdentifier("analysis.save-requirements-toolbar")
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) { Button("Recheck") { recheck() }.accessibilityIdentifier("analysis.recheck") }
             }
             .onAppear { load() }
             .onDisappear { suggestionTask?.cancel() }
@@ -3373,7 +3465,7 @@ struct ResumeAnalysisSheet: View {
                         .accessibilityLabel("Remove \(requirement.phrase)")
                 }
             }
-            Button("Save requirements") { saveRequirements() }
+            Button { saveRequirements() } label: { Text("Save requirements").frame(maxWidth: .infinity) }
                 .buttonStyle(CoralButtonStyle())
                 .accessibilityIdentifier("analysis.save-requirements")
         }
