@@ -601,7 +601,7 @@ enum ResumeLaTeXFormatter {
         text = text.replacingOccurrences(of: #"\\(?:begin|end)\{[^}]+\}"#, with: "", options: .regularExpression)
         text = text.replacingOccurrences(of: #"\\(?:hfill|linebreak|newline|\\)"#, with: "\n", options: .regularExpression)
         for token in ["&", "%", "#", "_", "{", "}"] {
-            text = text.replacingOccurrences(of: "\\(token)", with: token)
+            text = text.replacingOccurrences(of: "\\\(token)", with: token)
         }
         text = text.replacingOccurrences(of: #"\\textbackslash\{\}"#, with: "\\", options: .regularExpression)
         text = text.replacingOccurrences(of: #"\\[A-Za-z]+(?:\*)?(?:\[[^]]*\])?"#, with: "", options: .regularExpression)
