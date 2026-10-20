@@ -295,15 +295,15 @@ struct ProfileView: View {
     var body: some View {
         Form {
             Section("Identity") {
-                LabeledContent("Full name", value: name.isEmpty ? "Not set" : name)
-                LabeledContent("Email", value: email.isEmpty ? "Not set" : email)
-                LabeledContent("Phone", value: phone.isEmpty ? "Not set" : phone)
-                LabeledContent("Location", value: location.isEmpty ? "Not set" : location)
-                LabeledContent("LinkedIn URL", value: linkedin.isEmpty ? "Not set" : linkedin)
-                LabeledContent("GitHub URL", value: github.isEmpty ? "Not set" : github)
-                LabeledContent("Education", value: education.isEmpty ? "Not set" : education)
-                LabeledContent("Skills & abilities", value: skills.isEmpty ? "Not set" : skills)
-                LabeledContent("Certifications", value: certifications.isEmpty ? "Not set" : certifications)
+                detailRow("Full name", name, identifier: "profile.detail.name")
+                detailRow("Email", email, identifier: "profile.detail.email")
+                detailRow("Phone", phone, identifier: "profile.detail.phone")
+                detailRow("Location", location, identifier: "profile.detail.location")
+                detailRow("LinkedIn URL", linkedin, identifier: "profile.detail.linkedin")
+                detailRow("GitHub URL", github, identifier: "profile.detail.github")
+                detailRow("Education", education, identifier: "profile.detail.education")
+                detailRow("Skills & abilities", skills, identifier: "profile.detail.skills")
+                detailRow("Certifications", certifications, identifier: "profile.detail.certifications")
                 Button("Update personal info") { showingEdit = true }
             }
             Section("About") {
@@ -341,6 +341,18 @@ struct ProfileView: View {
         .alert("Personal info updated", isPresented: $showingSavedMessage) {
             Button("OK", role: .cancel) { }
         }
+    }
+
+    /// An identity row with its label above the value, as in the wizard's review rows: the label in
+    /// secondary ink and the value in primary ink, so the two read apart. VoiceOver reads them as one.
+    private func detailRow(_ label: String, _ value: String, identifier: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.caption).foregroundStyle(CVeeColors.secondary)
+            Text(value.isEmpty ? "Not set" : value).foregroundStyle(CVeeColors.ink)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
     }
 
     private func clearAllData() {
@@ -386,8 +398,9 @@ struct AIProviderView: View {
     }
 
     var body: some View {
+        // The groups have no section headers, because each row already names itself.
         Form {
-            Section("Provider") {
+            Section {
                 Picker("Provider", selection: $provider) {
                     ForEach(AIProvider.allCases) { item in
                         Text(item.name).tag(item).disabled(item == .apple && appleUnavailable)
@@ -402,7 +415,7 @@ struct AIProviderView: View {
                     hasSavedKey = selection.hasKey(for: newProvider)
                 }
             }
-            Section("Model") {
+            Section {
                 if provider == .apple {
                     LabeledContent("Model", value: "System Model")
                     Text(appleUnavailable ? FoundationModelsAvailability().state().description : "Apple selects the on-device model automatically.")
@@ -415,19 +428,35 @@ struct AIProviderView: View {
                 }
             }
             if provider.requiresKey {
-                Section("API key") {
+                Section {
                     if hasSavedKey {
-                        Label("API key saved", systemImage: "checkmark.shield.fill")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(CVeeColors.green)
-                            .accessibilityIdentifier("ai-provider.key-saved")
+                        // With a key saved, the edit action is a pencil at the end of the status row.
+                        HStack(spacing: 12) {
+                            Label("API key saved", systemImage: "checkmark.shield.fill")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(CVeeColors.green)
+                                .accessibilityIdentifier("ai-provider.key-saved")
+                            Spacer(minLength: 0)
+                            Button {
+                                showingKeyEditor = true
+                            } label: {
+                                Image(systemName: "pencil")
+                                    .font(.body.weight(.semibold))
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Edit API key")
+                            .accessibilityIdentifier("ai-provider.edit-key")
+                        }
+                    } else {
+                        Button {
+                            showingKeyEditor = true
+                        } label: {
+                            Label("Add API key", systemImage: "key.fill")
+                        }
+                        .accessibilityIdentifier("ai-provider.edit-key")
                     }
-                    Button {
-                        showingKeyEditor = true
-                    } label: {
-                        Label(hasSavedKey ? "Edit API key" : "Add API key", systemImage: hasSavedKey ? "pencil" : "key.fill")
-                    }
-                    .accessibilityIdentifier("ai-provider.edit-key")
                 }
             }
             Section {
@@ -456,7 +485,6 @@ struct AIProviderView: View {
 
 struct AIProviderKeyView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let provider: AIProvider
     let appleUnavailable: Bool
     let onSaved: () -> Void
@@ -489,16 +517,20 @@ struct AIProviderKeyView: View {
                         .autocorrectionDisabled()
                         .textContentType(.password)
                         .accessibilityIdentifier("ai-provider.api-key")
-                    Group {
-                        if dynamicTypeSize.isAccessibilitySize {
-                            VStack(alignment: .leading, spacing: 12) {
-                                keyActions
-                            }
-                        } else {
-                            HStack {
-                                keyActions
-                            }
-                        }
+                    Button(action: saveKey) {
+                        Text("Save").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(CoralButtonStyle())
+                    .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityHint("Saves the entered key and activates this provider")
+                    .accessibilityIdentifier("ai-provider.save-key")
+                }
+                if hasKey {
+                    Section {
+                        Button("Delete API key", role: .destructive) { showingDeletePrompt = true }
+                            .frame(maxWidth: .infinity)
+                            .accessibilityHint("Removes the saved key after confirmation")
+                            .accessibilityIdentifier("ai-provider.remove-key")
                     }
                 }
             }
@@ -525,39 +557,16 @@ struct AIProviderKeyView: View {
         }
     }
 
-    @ViewBuilder
-    private var keyActions: some View {
-        if hasKey {
-            Button(role: .destructive) {
-                showingDeletePrompt = true
-            } label: {
-                Text("Delete API key")
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityHint("Removes the saved key after confirmation")
-            .accessibilityIdentifier("ai-provider.remove-key")
-            if !dynamicTypeSize.isAccessibilitySize { Spacer() }
-        }
-        Button {
-            let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !key.isEmpty else { return }
-            do {
-                try selection.keyStore.save(key, for: provider)
-                selection.setProvider(provider)
-                onSaved()
-                keyDraft = ""
-                dismiss()
-            } catch { message = error.localizedDescription }
-        } label: {
-            Text("Save")
-                .fixedSize(horizontal: true, vertical: false)
-        }
-        .buttonStyle(CoralButtonStyle(horizontalPadding: 16, verticalPadding: 8))
-        .fixedSize(horizontal: true, vertical: false)
-        .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        .accessibilityHint("Saves the entered key and activates this provider")
-        .accessibilityIdentifier("ai-provider.save-key")
+    private func saveKey() {
+        let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        do {
+            try selection.keyStore.save(key, for: provider)
+            selection.setProvider(provider)
+            onSaved()
+            keyDraft = ""
+            dismiss()
+        } catch { message = error.localizedDescription }
     }
 }
 
@@ -632,48 +641,48 @@ struct ProfileEditView: View {
         NavigationStack {
             Form {
                 Section("Personal information") {
-                    LabeledContent("Full name") {
-                        TextField("Full name", text: $draft.name).textContentType(.name)
+                    field("Full name") {
+                        TextField("Full name", text: $draft.name, prompt: Text("First and last name")).textContentType(.name)
                             .focused($focusedProfileField, equals: "name")
                             .submitLabel(.next).onSubmit { focusedProfileField = "email" }
                     }
-                    LabeledContent("Email") {
-                        TextField("Email", text: $draft.email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    field("Email") {
+                        TextField("Email", text: $draft.email, prompt: Text("name@example.com")).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
                             .focused($focusedProfileField, equals: "email")
                             .submitLabel(.next).onSubmit { focusedProfileField = "phone" }
                     }
-                    LabeledContent("Phone") {
-                        TextField("Phone", text: $draft.phone).textContentType(.telephoneNumber).keyboardType(.phonePad)
+                    field("Phone") {
+                        TextField("Phone", text: $draft.phone, prompt: Text("Mobile number")).textContentType(.telephoneNumber).keyboardType(.phonePad)
                             .focused($focusedProfileField, equals: "phone")
                             .submitLabel(.next).onSubmit { focusedProfileField = "location" }
                     }
-                    LabeledContent("Location") {
-                        TextField("Location", text: $draft.location).textContentType(.addressCity)
+                    field("Location") {
+                        TextField("Location", text: $draft.location, prompt: Text("City, country")).textContentType(.addressCity)
                             .focused($focusedProfileField, equals: "location")
                             .submitLabel(.next).onSubmit { focusedProfileField = "linkedin" }
                     }
-                    LabeledContent("LinkedIn URL") {
-                        TextField("LinkedIn URL", text: $draft.linkedin).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    field("LinkedIn URL") {
+                        TextField("LinkedIn URL", text: $draft.linkedin, prompt: Text("https://linkedin.com/in/username")).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                             .focused($focusedProfileField, equals: "linkedin")
                             .submitLabel(.next).onSubmit { focusedProfileField = "github" }
                     }
-                    LabeledContent("GitHub URL") {
-                        TextField("GitHub URL", text: $draft.github).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    field("GitHub URL") {
+                        TextField("GitHub URL", text: $draft.github, prompt: Text("https://github.com/username")).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                             .focused($focusedProfileField, equals: "github")
                             .submitLabel(.next).onSubmit { focusedProfileField = "education" }
                     }
-                    LabeledContent("Education") {
-                        TextField("Education", text: $draft.education)
+                    field("Education") {
+                        TextField("Education", text: $draft.education, prompt: Text("Degree and school"))
                             .focused($focusedProfileField, equals: "education")
                             .submitLabel(.next).onSubmit { focusedProfileField = "skills" }
                     }
-                    LabeledContent("Skills & abilities") {
-                        TextField("Skills & abilities", text: $draft.skills)
+                    field("Skills & abilities") {
+                        TextField("Skills & abilities", text: $draft.skills, prompt: Text("Your key skills"))
                             .focused($focusedProfileField, equals: "skills")
                             .submitLabel(.next).onSubmit { focusedProfileField = "certifications" }
                     }
-                    LabeledContent("Certifications") {
-                        TextField("Certifications", text: $draft.certifications)
+                    field("Certifications") {
+                        TextField("Certifications", text: $draft.certifications, prompt: Text("Licenses and certificates"))
                             .focused($focusedProfileField, equals: "certifications")
                             .submitLabel(.done).onSubmit { focusedProfileField = nil }
                     }
@@ -684,14 +693,16 @@ struct ProfileEditView: View {
                             .font(.caption)
                             .foregroundStyle(.red)
                     }
-                    Button("Save changes") {
+                    Button {
                         name = draft.name; email = draft.email; phone = draft.phone; location = draft.location; linkedin = draft.linkedin; github = draft.github; education = draft.education; skills = draft.skills; certifications = draft.certifications
                         onSave()
                         dismiss()
+                    } label: {
+                        Text("Save changes").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(CoralButtonStyle())
-                    .frame(maxWidth: .infinity)
                     .disabled(!invalidURLFields.isEmpty)
+                    .accessibilityIdentifier("profile.save")
                 }
             }
             .modifier(WorkspaceSurface())
@@ -701,6 +712,18 @@ struct ProfileEditView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { focusedProfileField = nil } }
             }
+        }
+    }
+
+    /// A field with its label above the input, as on Profile, with the label in secondary ink. The
+    /// text field carries the same name for VoiceOver (a prompt replaces the title as its label, so it
+    /// is set again here), and the visible label is hidden from it.
+    private func field<Input: View>(_ label: String, @ViewBuilder input: () -> Input) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.caption).foregroundStyle(CVeeColors.secondary)
+                .accessibilityHidden(true)
+            input()
+                .accessibilityLabel(label)
         }
     }
 }

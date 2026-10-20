@@ -2,6 +2,18 @@
 
 Dated history of shipped changes, newest first. Dated entries come from the git history (commit dates, pull request numbers from merge commits, and short commit hashes where one day holds several commits) and from the dated reports in [design-audit/](design-audit/README.md). What CVee does today is in [README.md](README.md); planned work is in [ROADMAP.md](ROADMAP.md).
 
+## 2026-10-20
+
+### Profile, round one
+
+Captures: [design-audit/2026-10-20-profile-round-one/](design-audit/2026-10-20-profile-round-one/) (ten iPhone screens).
+
+- Profile's identity rows show each label above its value, the label in secondary ink and the value (or "Not set") in primary ink. Update personal info stacks each label above its field the same way, and the field prompts show the expected format, such as "name@example.com", instead of repeating the label.
+- Save changes on Update personal info and Save on the API key sheet span the row. On the key sheet, Delete API key moves below Save into its own group.
+- AI Provider drops its Provider, Model, and API key section headers, since each row names itself. With a key saved, the separate "Edit API key" row is gone: a pencil button at the end of the "API key saved" row opens the key sheet.
+- OpenAI offers GPT-6 Luna, GPT-6.1 Sol (the default), and GPT-6 Astra instead of GPT-5.6 Luna, Terra, and Sol. A saved choice that is no longer listed falls back to GPT-6.1 Sol.
+- UI tests cover the stacked Profile rows and the Save changes width, the API key Save width, the pencil on the saved-key row, and the GPT-6 model menu. Unit tests cover the OpenAI list and the fallback for a retired model choice. The Profile tests reach AI Provider and Clear all data by scrolling until each is hittable instead of a fixed number of swipes.
+
 ## 2026-10-19
 
 ### Resume Wizard, round three

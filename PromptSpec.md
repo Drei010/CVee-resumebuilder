@@ -105,11 +105,11 @@ Return a polished ATS-friendly resume draft with a 2-3 sentence summary, one bul
 
 | Provider | Endpoint and auth | Request fields | Models (default in bold) |
 |---|---|---|---|
-| OpenAI | `https://api.openai.com/v1/responses`, `Authorization: Bearer <key>` | `model`, `instructions`, `input`, `max_output_tokens` | `gpt-5.6-luna`, **`gpt-5.6-terra`**, `gpt-5.6-sol` |
+| OpenAI | `https://api.openai.com/v1/responses`, `Authorization: Bearer <key>` | `model`, `instructions`, `input`, `max_output_tokens` | `gpt-6-luna`, **`gpt-6.1-sol`**, `gpt-6-astra` |
 | Gemini | `https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent`, `x-goog-api-key` | `system_instruction`, `contents`, `generationConfig.maxOutputTokens` | `gemini-3.5-flash-lite`, **`gemini-3.6-flash`**, `gemini-3.8-flash` |
 | Claude | `https://api.anthropic.com/v1/messages`, `x-api-key`, `anthropic-version: 2023-06-01` | `model`, `system`, one `user` message, `max_tokens` | `claude-haiku-4-5-20251001`, **`claude-sonnet-5`**, `claude-opus-5` |
 
-The model lists are fixed in code, and the selected model id is not checked with the provider. The response text is the joined text parts: OpenAI `output[].content[].text`, Gemini `candidates[].content.parts[].text`, Claude `content[].text`.
+The model lists are fixed in code, and the selected model id is not checked with the provider. A saved model id that is no longer listed (for example a GPT-5.6 choice) falls back to the provider's default. The response text is the joined text parts: OpenAI `output[].content[].text`, Gemini `candidates[].content.parts[].text`, Claude `content[].text`.
 
 Errors, shown to the user as written:
 

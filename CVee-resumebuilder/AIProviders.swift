@@ -14,7 +14,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
     var models: [AIModelOption] {
         switch self {
         case .apple: [AIModelOption(id: "system", name: "System Model")]
-        case .openAI: ["gpt-5.6-luna|GPT-5.6 Luna", "gpt-5.6-terra|GPT-5.6 Terra", "gpt-5.6-sol|GPT-5.6 Sol"].map(Self.option)
+        case .openAI: ["gpt-6-luna|GPT-6 Luna", "gpt-6.1-sol|GPT-6.1 Sol", "gpt-6-astra|GPT-6 Astra"].map(Self.option)
         case .gemini: ["gemini-3.5-flash-lite|Gemini 3.5 Flash-Lite", "gemini-3.6-flash|Gemini 3.6 Flash", "gemini-3.8-flash|Gemini 3.8 Flash"].map(Self.option)
         case .claude: ["claude-haiku-4-5-20251001|Claude Haiku 4.5", "claude-sonnet-5|Claude Sonnet 5", "claude-opus-5|Claude Opus 5"].map(Self.option)
         }
