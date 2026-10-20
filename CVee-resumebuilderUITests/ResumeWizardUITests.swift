@@ -774,7 +774,8 @@ final class ResumeWizardUITests: XCTestCase {
         checkMatch.tap()
         XCTAssertTrue(app.navigationBars["Resume report"].waitForExistence(timeout: timeout))
         let requirement = app.textFields["analysis.new-phrase"]
-        XCTAssertTrue(requirement.waitForExistence(timeout: timeout))
+        // The report's mascot and Resume match rows sit above the requirements, so scroll to the field.
+        XCTAssertTrue(revealHittable(requirement, in: app))
         requirement.tap()
         requirement.typeText("Python")
         requirement.typeText("\n")
@@ -857,6 +858,7 @@ final class ResumeWizardUITests: XCTestCase {
         app.buttons["wizard.generate"].tap()
         app.buttons["wizard.confirm-replacement"].firstMatch.tap()
         XCTAssertTrue(app.descendants(matching: .any)["wizard.error"].waitForExistence(timeout: timeout))
+        app.buttons["wizard.error-dismiss"].tap()
         XCTAssertTrue(tapWhenHittable(app.buttons["wizard.return-to-draft"], in: app))
         XCTAssertTrue(tapWhenHittable(app.buttons["wizard.edit-resume"], in: app))
         XCTAssertTrue((editor.value as? String ?? "").contains("NAVIGATION_SENTINEL"))
@@ -866,7 +868,12 @@ final class ResumeWizardUITests: XCTestCase {
         dismissKeyboard(in: app)
         XCTAssertTrue(tapWhenHittable(app.buttons["wizard.edit-resume"], in: app))
         XCTAssertTrue(tapWhenHittable(app.buttons["wizard.save-resume"], in: app))
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Couldn’t save resume'")).firstMatch.waitForExistence(timeout: timeout))
+        let saveError = app.staticTexts["wizard.draft-error"]
+        XCTAssertTrue(saveError.waitForExistence(timeout: timeout))
+        XCTAssertTrue(saveError.label.hasPrefix("Your draft is kept."))
+        XCTAssertEqual(app.staticTexts["wizard.error-title"].label, "Couldn’t save your resume")
+        app.buttons["wizard.error-dismiss"].tap()
+        XCTAssertTrue(waitForDisappearance(saveError))
         XCTAssertTrue(tapWhenHittable(app.buttons["wizard.save-resume"], in: app))
         XCTAssertTrue(app.navigationBars["Resumes"].waitForExistence(timeout: timeout))
         XCTAssertEqual(app.buttons.matching(identifier: "resume.saved-row").count, 2, "One fixture and one generated resume; retry must not insert a duplicate")
@@ -1014,6 +1021,193 @@ final class ResumeWizardUITests: XCTestCase {
         dismissConfirmation("Cancel", in: app)
         XCTAssertTrue(task.exists)
         capture(app, "task-delete-cancelled")
+    }
+
+    func testWizardErrorPopupShowsMascotCardAndKeepsDraft() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture", "-ui-testing-regeneration-failure"]
+        app.launch()
+        generateFixture(in: app)
+        app.buttons["wizard.back"].tap()
+        XCTAssertTrue(app.buttons["wizard.generate"].waitForExistence(timeout: timeout))
+        app.buttons["wizard.generate"].tap()
+        app.buttons["wizard.confirm-replacement"].firstMatch.tap()
+
+        let popup = app.descendants(matching: .any)["wizard.error-popup"]
+        XCTAssertTrue(popup.waitForExistence(timeout: timeout))
+        XCTAssertEqual(app.staticTexts["wizard.error-title"].label, "Couldn’t generate your resume")
+        XCTAssertTrue(app.staticTexts["wizard.error"].exists)
+        // The card holds the 112-point dog above its title, message and OK.
+        XCTAssertGreaterThan(popup.frame.height, 112 + 44)
+        XCTAssertFalse(app.buttons["wizard.back"].exists, "Back hides while the popup shows")
+        let ok = app.buttons["wizard.error-dismiss"]
+        XCTAssertLessThan(abs(ok.frame.midX - popup.frame.midX), 4)
+        capture(app, "wizard-generation-error-popup")
+        ok.tap()
+        XCTAssertTrue(waitForDisappearance(popup))
+        XCTAssertTrue(app.buttons["wizard.back"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.return-to-draft"], in: app))
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.generated.pdf"].waitForExistence(timeout: timeout))
+    }
+
+    func testWizardBubbleSpeaksForEmptyLibraries() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+        fillWizardProfile(in: app)
+        app.buttons["wizard.next"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.work-library"].waitForExistence(timeout: timeout))
+        let mascot = app.descendants(matching: .any)["wizard.mascot"]
+        XCTAssertTrue(mascot.waitForExistence(timeout: timeout))
+        XCTAssertTrue(mascot.label.contains("No tasks added yet"), mascot.label)
+        // The bubble carries the guidance, so the empty state keeps only its title and button.
+        XCTAssertTrue(app.buttons["Add experience"].exists)
+        XCTAssertFalse(app.staticTexts["Add a task or achievement to use in your resume."].exists)
+        // On iPhone the title sits in the navigation bar beside Back, above the bubble.
+        let back = app.buttons["wizard.back"]
+        XCTAssertTrue(back.exists)
+        if app.horizontalSizeClass == .compact {
+            let title = app.navigationBars["Resume Wizard"].staticTexts["Resume Wizard"]
+            XCTAssertTrue(title.exists)
+            XCTAssertLessThan(abs(title.frame.midY - back.frame.midY), 12)
+            XCTAssertGreaterThan(title.frame.minX, back.frame.maxX)
+            XCTAssertLessThan(title.frame.maxY, mascot.frame.minY)
+        }
+
+        // Tasks but no saved jobs.
+        app.terminate()
+        app.launchArguments = ["-ui-testing", "-mock-data"]
+        app.launch()
+        fillWizardProfile(in: app)
+        app.buttons["wizard.next"].tap()
+        selectFirstWizardTask(in: app)
+        app.buttons["wizard.next"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.job-description"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(mascot.waitForExistence(timeout: timeout))
+        XCTAssertTrue(mascot.label.contains("No jobs saved yet"), mascot.label)
+        XCTAssertTrue(app.buttons["wizard.jobs.empty-add-job"].exists)
+        XCTAssertFalse(app.staticTexts["Add a job description to continue."].exists)
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Add job'")).count, 1, "Only the empty state offers Add job")
+    }
+
+    func testWizardNoMatchingJobsOffersAddJob() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
+        app.launch()
+        fillWizardProfile(in: app)
+        app.buttons["wizard.next"].tap()
+        selectFirstWizardTask(in: app)
+        app.buttons["wizard.next"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["wizard.job-description"].waitForExistence(timeout: timeout))
+        let filter = app.buttons["wizard.jobs.filter"]
+        XCTAssertTrue(filter.waitForExistence(timeout: timeout))
+        filter.tap()
+        let needsReview = app.buttons["Needs review"]
+        XCTAssertTrue(needsReview.waitForExistence(timeout: timeout))
+        needsReview.tap()
+        XCTAssertTrue(app.staticTexts["No matching jobs"].waitForExistence(timeout: timeout))
+        let addJob = app.buttons["wizard.jobs.empty-add-job"]
+        let clear = app.buttons["wizard.jobs.clear-filters"]
+        XCTAssertTrue(addJob.exists)
+        XCTAssertTrue(clear.exists)
+        // Both sit fully above the bottom bar without scrolling, Add job first.
+        let bar = app.descendants(matching: .any)["wizard.bottom-bar"]
+        XCTAssertLessThanOrEqual(addJob.frame.maxY, bar.frame.minY)
+        XCTAssertLessThanOrEqual(clear.frame.maxY, bar.frame.minY, "Clear search and filters stays above the bottom bar")
+        XCTAssertTrue(addJob.frame.maxX <= clear.frame.minX || addJob.frame.maxY <= clear.frame.minY, "Add job comes first")
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Add job'")).count, 1, "The trailing Add job row hides")
+        capture(app, "wizard-no-matching-jobs")
+        addJob.tap()
+        let cancel = app.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: timeout), "Add job opens the add job sheet")
+        cancel.tap()
+        XCTAssertTrue(tapWhenHittable(clear, in: app))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'wizard.job.'")).firstMatch.waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Add job'")).firstMatch.exists)
+    }
+
+    func testResumeReportShowsMascotAndMatchPercentage() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
+        app.launch()
+        generateFixture(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.check-job-match"], in: app))
+        XCTAssertTrue(app.navigationBars["Resume report"].waitForExistence(timeout: timeout))
+        let mascot = app.descendants(matching: .any)["analysis.mascot"]
+        XCTAssertTrue(mascot.waitForExistence(timeout: timeout))
+        XCTAssertTrue(mascot.label.contains("Let’s check your match"), mascot.label)
+        let match = app.descendants(matching: .any)["analysis.match-percentage"]
+        XCTAssertTrue(match.waitForExistence(timeout: timeout))
+        XCTAssertTrue(match.label.contains("Not calculated"), match.label)
+
+        let requirement = app.textFields["analysis.new-phrase"]
+        XCTAssertTrue(revealHittable(requirement, in: app))
+        requirement.tap()
+        requirement.typeText("Python\n")
+        dismissKeyboard(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["analysis.add-phrase"], in: app))
+        let save = app.buttons["analysis.save-requirements"]
+        XCTAssertTrue(revealHittable(save, in: app))
+        save.tap()
+        let meter = app.descendants(matching: .any)["analysis.match-meter"]
+        XCTAssertTrue(reveal(meter, in: app))
+        XCTAssertEqual(meter.value as? String, "100%")
+        XCTAssertTrue(reveal(mascot, in: app))
+        XCTAssertTrue(mascot.label.contains("Your resume matches 100%"), mascot.label)
+        XCTAssertTrue(match.label.contains("100%"), match.label)
+        XCTAssertEqual(app.staticTexts["analysis.coverage-summary"].label, "1 of 1 reviewed requirements mentioned.")
+        capture(app, "report-match-percentage")
+    }
+
+    func testResumeReportOffersProviderChoiceWithoutAppleIntelligence() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture", "-ui-testing-apple-intelligence-unavailable"]
+        app.launch()
+        generateFixture(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["wizard.check-job-match"], in: app))
+        XCTAssertTrue(app.navigationBars["Resume report"].waitForExistence(timeout: timeout))
+        let choose = app.buttons["analysis.configure-provider"]
+        XCTAssertTrue(revealHittable(choose, in: app))
+        XCTAssertFalse(app.buttons["analysis.suggest-requirements"].exists)
+        XCTAssertTrue(app.staticTexts["Apple Intelligence isn’t available right now. Choose OpenAI, Gemini, or Claude to get suggestions."].exists)
+        capture(app, "report-choose-provider")
+        choose.tap()
+
+        let providerSelector = app.buttons["ai-provider.selector"]
+        XCTAssertTrue(providerSelector.waitForExistence(timeout: timeout))
+        providerSelector.tap()
+        app.buttons["OpenAI"].tap()
+        let editKey = app.buttons["ai-provider.edit-key"]
+        XCTAssertTrue(editKey.waitForExistence(timeout: timeout))
+        editKey.tap()
+        let key = app.secureTextFields["ai-provider.api-key"]
+        XCTAssertTrue(key.waitForExistence(timeout: timeout))
+        key.tap()
+        key.typeText("ui-test-key")
+        let saveKey = app.buttons["ai-provider.save-key"]
+        let saveEnabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: saveKey)
+        wait(for: [saveEnabled], timeout: timeout)
+        saveKey.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["ai-provider.key-saved"].firstMatch.waitForExistence(timeout: timeout))
+        app.buttons["analysis.provider-done"].tap()
+
+        // The report resolves its route again: Apple Intelligence is still off, so OpenAI is named.
+        let suggest = app.buttons["analysis.suggest-requirements"]
+        XCTAssertTrue(revealHittable(suggest, in: app))
+        XCTAssertEqual(suggest.label, "Suggest with OpenAI")
+        XCTAssertTrue(app.staticTexts["Sends the job description to OpenAI."].exists)
+        XCTAssertFalse(app.buttons["analysis.configure-provider"].exists)
+    }
+
+    private func fillWizardProfile(in app: XCUIApplication) {
+        selectTab("Resume Wizard", in: app)
+        let name = app.textFields["wizard.full-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: timeout))
+        name.tap(); name.typeText("Test User\n")
+        let email = app.textFields["wizard.email"]
+        XCTAssertTrue(revealBelow(email, in: app))
+        email.tap(); email.typeText("test@example.com")
+        dismissKeyboard(in: app)
     }
 
     private func dismissConfirmation(_ label: String, in app: XCUIApplication) {

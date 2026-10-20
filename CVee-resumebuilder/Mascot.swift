@@ -315,3 +315,60 @@ struct SpeechBubbleShape: Shape {
         return path
     }
 }
+
+/// A wizard failure as a popup: a dimmed backdrop that doesn't dismiss on tap, and a centered card
+/// with the dog, a title, the message and an OK button. The dog is decorative; the text carries the
+/// message. It fades and scales in over 200 ms, with no animation under Reduce Motion.
+struct MascotErrorPopup: View {
+    let title: String
+    let message: String
+    var messageIdentifier = "wizard.error"
+    let onDismiss: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    // Swallows taps, so the backdrop never dismisses the popup; only OK does.
+                }
+                .accessibilityHidden(true)
+            VStack(spacing: 12) {
+                MascotView(mood: .curious, size: MascotMetrics.prominentSize)
+                VStack(spacing: 6) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(CVeeColors.ink)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("wizard.error-title")
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(CVeeColors.secondary)
+                        .accessibilityIdentifier(messageIdentifier)
+                }
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                Button(action: onDismiss) { Text("OK").frame(maxWidth: .infinity) }
+                    .buttonStyle(CoralButtonStyle())
+                    .accessibilityIdentifier("wizard.error-dismiss")
+                    .padding(.top, 4)
+            }
+            .padding(20)
+            .frame(maxWidth: 340)
+            .background(CVeeColors.card, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(CVeeColors.divider, lineWidth: 1))
+            .padding(24)
+            .scaleEffect(appeared ? 1 : 0.92)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
+            .accessibilityIdentifier("wizard.error-popup")
+        }
+        .opacity(appeared ? 1 : 0)
+        .onAppear {
+            if reduceMotion { appeared = true } else { withAnimation(.easeOut(duration: 0.2)) { appeared = true } }
+        }
+    }
+}

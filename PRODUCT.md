@@ -29,7 +29,7 @@ Every AI feature and every prompt follows this rule. Other docs link here instea
 - Apple Intelligence processes content on the device, behind Foundation Models availability checks. It is the default when the device is eligible.
 - OpenAI, Gemini, and Claude are explicit choices. The user selects one and adds their own API key in Profile → Advanced settings → AI Provider. When an AI feature runs, the relevant resume, profile, job, or task text goes to that provider under the user's key and its terms, and the provider may charge for it. The AI Provider screen and the wizard's review step state where content is processed.
 - Generation, task import splitting, and task enhancement all use the selected provider. CVee never switches providers on its own: a missing key or an unavailable model is reported, not rerouted.
-- Resume-report suggestions always run on the device with Apple Intelligence, whichever provider is selected.
+- Resume-report suggestions run on the device with Apple Intelligence whenever it is available, whichever provider is selected. Otherwise they use the remote provider selected in Profile, and only when it has a saved key; each button names that provider and says what it sends, so CVee still never switches providers on its own.
 - API keys stay in the Keychain on this device and need device authentication to read. Clear all data removes them too.
 - Saved tasks, jobs, resumes, and profile information are stored in the app's local data store. No account is required. Apart from the selected AI provider, CVee's only network request fetches a job page from a link the user saved, when they ask for it.
 
@@ -39,11 +39,11 @@ Preserve accessibility. Give interactive controls accessibility labels, with hin
 
 ### Resume reports are advisory
 
-Resume reports provide transparent, local phrase coverage against a user-confirmed job checklist, related work-library evidence, and document-health findings checked on the resume text and a PDF rendered from it. Coverage is not an ATS score and does not verify proficiency, years of experience, certification validity, eligibility, or hiring outcomes. Findings never modify resume text or block saving/exporting. Apple Intelligence suggestions are optional and validated against their supplied text.
+Resume reports provide transparent, local phrase coverage against a user-confirmed job checklist, related work-library evidence, and document-health findings checked on the resume text and a PDF rendered from it. The match percentage is the share of the user's confirmed job phrases found in the resume. It is not an ATS score and promises nothing: like coverage, it does not verify proficiency, years of experience, certification validity, eligibility, or hiring outcomes. Findings never modify resume text or block saving/exporting. AI suggestions are optional and validated against their supplied text.
 
 ### Non-goals
 
-- A hiring score. The resume report shows phrase coverage and document health; it computes no ATS score or match percentage and does not promise interviews or job outcomes.
+- A hiring score. The resume report shows phrase coverage, its match percentage (the share of confirmed phrases found in the resume), and document health; it computes no ATS score and does not promise interviews or job outcomes.
 - Silent changes to the user's content. AI results and fetched job descriptions are proposals that change saved content only when the user accepts or saves them, and report findings never change it.
 - Project-management features. The Asana-inspired reference sets the visual language only; CVee adds no boards, inboxes, assignees, due dates, or task-completion workflows ([DESIGN.md](DESIGN.md), [design-audit/REVIEW.md](design-audit/REVIEW.md)).
 

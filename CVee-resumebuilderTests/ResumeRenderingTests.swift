@@ -74,6 +74,15 @@ final class ResumeRenderingTests: XCTestCase {
         XCTAssertTrue(result.unsupportedCommands.contains("\\mystery"))
     }
 
+    func testLaTeXEditorRoundTripRestoresEscapedSymbolsAndHeadings() {
+        let draft = "Taylor Example\ntaylor@example.com\nWORK EXPERIENCE\n• Raised retention to 83% for team #2 using snake_case scripts\nSKILLS & ABILITIES\nSwift, Python"
+        let restored = ResumeLaTeXFormatter.attributedText(from: ResumeLaTeXFormatter.source(from: ResumeTextFormatter.format(draft)))
+        XCTAssertEqual(restored.string.trimmingCharacters(in: .whitespacesAndNewlines), draft)
+        let heading = (restored.string as NSString).range(of: "SKILLS & ABILITIES")
+        XCTAssertNotEqual(heading.location, NSNotFound)
+        XCTAssertNotNil(restored.attribute(.underlineStyle, at: heading.location, effectiveRange: nil))
+    }
+
     func testStructuredRendererOmitsHiddenSectionsAndKeepsLongContent() throws {
         var document = ResumeDocument.empty
         document.sections[0].content = .contact(ContactContent(name: "Taylor Example", email: "taylor@example.com"))

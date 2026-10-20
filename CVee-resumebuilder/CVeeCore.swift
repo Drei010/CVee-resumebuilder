@@ -271,6 +271,9 @@ enum ModelAvailabilityState: Equatable {
 
 struct FoundationModelsAvailability {
     func state() -> ModelAvailabilityState {
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing-apple-intelligence-unavailable") {
+            return .unavailable("Turn on Apple Intelligence in Settings to generate resumes.")
+        }
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             switch SystemLanguageModel.default.availability {
@@ -601,7 +604,7 @@ enum ResumeLaTeXFormatter {
         text = text.replacingOccurrences(of: #"\\(?:begin|end)\{[^}]+\}"#, with: "", options: .regularExpression)
         text = text.replacingOccurrences(of: #"\\(?:hfill|linebreak|newline|\\)"#, with: "\n", options: .regularExpression)
         for token in ["&", "%", "#", "_", "{", "}"] {
-            text = text.replacingOccurrences(of: "\\(token)", with: token)
+            text = text.replacingOccurrences(of: "\\\(token)", with: token)
         }
         text = text.replacingOccurrences(of: #"\\textbackslash\{\}"#, with: "\\", options: .regularExpression)
         text = text.replacingOccurrences(of: #"\\[A-Za-z]+(?:\*)?(?:\[[^]]*\])?"#, with: "", options: .regularExpression)

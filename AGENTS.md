@@ -2,7 +2,7 @@
 
 ## Project overview
 
-CVee is a SwiftUI resume workspace for iPhone and iPad with five tabs. [README.md](README.md) is the home of the feature list, the five tabs, the import and generation limits, and the build and test steps; read it before changing behavior. SwiftData stores work experiences, job targets (the ways to add one are in [README.md](README.md#app-functionality)), and resumes (a structured JSON document, plus RTF sections on wizard saves and older resumes); profile fields use `@AppStorage`. Resume generation, task import splitting, and task enhancement go through one provider router, `AITextGenerationService` in `AIProviders.swift`: Apple Intelligence on the device with Foundation Models, or OpenAI, Gemini, or Claude with the user's API key from the Keychain. The resume report's AI suggestions use Apple Intelligence only.
+CVee is a SwiftUI resume workspace for iPhone and iPad with five tabs. [README.md](README.md) is the home of the feature list, the five tabs, the import and generation limits, and the build and test steps; read it before changing behavior. SwiftData stores work experiences, job targets (the ways to add one are in [README.md](README.md#app-functionality)), and resumes (a structured JSON document, plus RTF sections on wizard saves and older resumes); profile fields use `@AppStorage`. Resume generation, task import splitting, and task enhancement go through one provider router, `AITextGenerationService` in `AIProviders.swift`: Apple Intelligence on the device with Foundation Models, or OpenAI, Gemini, or Claude with the user's API key from the Keychain. The resume report's AI suggestions use Apple Intelligence when it is available, and otherwise the selected remote provider through the same router.
 
 ## Documentation map
 
@@ -33,7 +33,7 @@ When a fact changes, update the file that owns it and link to it elsewhere inste
   - `StructuredResume.swift`, `StructuredResumeEditor.swift` — the structured resume document, converter, renderer, LaTeX import, and section editor.
   - `ResumeAnalysis.swift` — phrase coverage, document health, and Apple Intelligence suggestions for the resume report.
   - `TaskMetrics.swift` — the Tasks progress widgets.
-  - `Mascot.swift` — the dog mascot, its animation, and its speech bubble, used on Tasks (leaning on the quick capture card), Saved Jobs, and the Resume Wizard (above its progress bar).
+  - `Mascot.swift` — the dog mascot, its animation, and its speech bubble, used on Tasks (leaning on the quick capture card), Saved Jobs, the Resume Wizard (above its progress bar), the resume report, and the wizard's error popup (`MascotErrorPopup`).
   - `CVeeIntents.swift` — App Shortcuts.
   - `CVee_resumebuilderApp.swift` — app entry, model container, and test launch arguments.
 - `ShareExtension/`, `ShareExtension-Info.plist` — the "Save to CVee" share extension.

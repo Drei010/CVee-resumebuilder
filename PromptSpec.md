@@ -97,7 +97,7 @@ Return a polished ATS-friendly resume draft with a 2-3 sentence summary, one bul
 
 ### Provider router
 
-`AITextGenerationService.generate(instructions:prompt:maxOutputTokens:)` in `AIProviders.swift` sends resume generation, task import splitting, and task enhancement to the selected provider. It never falls back to another provider. Resume-report suggestions do not use it (see below).
+`AITextGenerationService.generate(instructions:prompt:maxOutputTokens:)` in `AIProviders.swift` sends resume generation, task import splitting, and task enhancement to the selected provider. It never falls back to another provider. Resume-report suggestions use it only when Apple Intelligence is unavailable and a remote provider is selected (see below).
 
 - Provider: the saved choice. With none saved, Apple Intelligence, or no provider when the device is not eligible. No provider, or a remote provider whose key is missing or cannot be read (for example, because device authentication was cancelled), fails with "Choose an AI provider and add its API key in Profile → AI Provider."
 - Apple Intelligence: checks Foundation Models availability, then runs a `LanguageModelSession` with the instructions and responds to the prompt on the device. The token cap is not passed, and an empty response is returned as is. When the model is unavailable the call fails with the availability message, for example "Turn on Apple Intelligence in Settings to generate resumes."
@@ -176,7 +176,13 @@ The prompt asks for exactly two sentences that keep every supplied number, tool,
 
 ### Resume report suggestions
 
-"Suggest with Apple Intelligence" and "Find related evidence" call Foundation Models directly (`OnDeviceAnalysisSuggestionService` in `ResumeAnalysis.swift`), whichever provider is selected. When Apple Intelligence is unavailable they fail with the availability message. A response that is not the expected JSON fails with "The AI provider returned an unreadable response."
+The report's two suggestion buttons run through `AnalysisSuggestionService` in `ResumeAnalysis.swift`, on the route `AnalysisSuggestionRoute.resolve(appleIntelligenceReady:selectedProvider:hasKey:)` picks when the report opens and again when its provider sheet closes:
+
+1. Apple Intelligence, when Foundation Models is available: a `LanguageModelSession` on the device, whichever provider is selected.
+2. Otherwise, the provider selected in Profile when it is OpenAI, Gemini, or Claude with a saved key: the router above, with a 2048-token cap.
+3. Otherwise, no route: the buttons are replaced by "Choose an AI provider".
+
+Each button names the provider a tap will use ("Suggest with Apple Intelligence", "Suggest with OpenAI", "Find related evidence", "Find related evidence with OpenAI"), so CVee never switches on its own. The instructions and validation are the same on every route. Before decoding, the response is cut to the text from its first `[` to its last `]`, so a fenced or prefixed JSON array still parses; a response with no decodable array fails with "The AI provider returned an unreadable response."
 
 Requirement suggestions send the job description with these instructions:
 
