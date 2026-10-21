@@ -2244,29 +2244,7 @@ struct AddJobView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Picker("Capture method", selection: $mode) { ForEach(CaptureMode.allCases) { Text($0.rawValue).tag($0) } }
-                        .pickerStyle(.segmented)
-                    switch mode {
-                    case .paste:
-                        Button { paste() } label: { Label("Paste from clipboard", systemImage: "doc.on.clipboard") }
-                    case .document:
-                        Button { showingDocumentPicker = true } label: { Label("Choose PDF, DOCX, or TXT", systemImage: "doc.badge.plus") }
-                    case .screenshots:
-                        PhotosPicker(selection: $photoItems, maxSelectionCount: JobCaptureLimits.maxImages, selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current) {
-                            Label("Choose from Photos", systemImage: "photo.on.rectangle.angled")
-                        }
-                        .accessibilityHint("Pick up to 10 screenshots in the order you took them")
-                        Button { showingImagePicker = true } label: { Label("Choose from Files", systemImage: "folder") }
-                    }
-                    if isProcessing { ProgressView("Extracting locally…") }
-                } header: {
-                    Text("Capture")
-                } footer: {
-                    if mode == .screenshots {
-                        Text("On LinkedIn, tap Show more under About the job, then take screenshots as you scroll, each overlapping the last by a few lines. CVee joins them in order and leaves out LinkedIn’s buttons.")
-                    }
-                }
+                captureSection
                 Section("Job details") {
                     TextField("Job title (optional)", text: $draft.title)
                     TextField("Company (optional)", text: $draft.company)
@@ -2304,7 +2282,6 @@ struct AddJobView: View {
             }
             .fileImporter(isPresented: $showingDocumentPicker, allowedContentTypes: [.pdf, .plainText, .data], allowsMultipleSelection: false) { result in importFiles(result, isImage: false) }
             .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in importFiles(result, isImage: true) }
-            .onChange(of: photoItems) { _, items in importPhotos(items) }
             .onAppear {
                 if JobCaptureDraftStore.load()?.hasContent == true { showingResumeDraft = true }
             }
@@ -2331,6 +2308,34 @@ struct AddJobView: View {
 
     @State private var showingDocumentPicker = false
     @State private var showingImagePicker = false
+
+    /// Kept out of `body`: with this section inline, Xcode 26.6 gives up type-checking `body` ("unable to type-check this expression in reasonable time").
+    private var captureSection: some View {
+        Section {
+            Picker("Capture method", selection: $mode) { ForEach(CaptureMode.allCases) { Text($0.rawValue).tag($0) } }
+                .pickerStyle(.segmented)
+            switch mode {
+            case .paste:
+                Button { paste() } label: { Label("Paste from clipboard", systemImage: "doc.on.clipboard") }
+            case .document:
+                Button { showingDocumentPicker = true } label: { Label("Choose PDF, DOCX, or TXT", systemImage: "doc.badge.plus") }
+            case .screenshots:
+                PhotosPicker(selection: $photoItems, maxSelectionCount: JobCaptureLimits.maxImages, selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current) {
+                    Label("Choose from Photos", systemImage: "photo.on.rectangle.angled")
+                }
+                .accessibilityHint("Pick up to 10 screenshots in the order you took them")
+                Button { showingImagePicker = true } label: { Label("Choose from Files", systemImage: "folder") }
+            }
+            if isProcessing { ProgressView("Extracting locally…") }
+        } header: {
+            Text("Capture")
+        } footer: {
+            if mode == .screenshots {
+                Text("On LinkedIn, tap Show more under About the job, then take screenshots as you scroll, each overlapping the last by a few lines. CVee joins them in order and leaves out LinkedIn’s buttons.")
+            }
+        }
+        .onChange(of: photoItems) { _, items in importPhotos(items) }
+    }
 
     private func paste() {
         let pasted = UIPasteboard.general.string ?? ""
