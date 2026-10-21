@@ -316,13 +316,25 @@ struct SpeechBubbleShape: Shape {
     }
 }
 
-/// A wizard failure as a popup: a dimmed backdrop that doesn't dismiss on tap, and a centered card
-/// with the dog, a title, the message and an OK button. The dog is decorative; the text carries the
-/// message. It fades and scales in over 200 ms, with no animation under Reduce Motion.
+/// A failure as a popup: a dimmed backdrop that doesn't dismiss on tap, and a centered card with the
+/// dog, a title, the message and an OK button. With an `action`, such as Configure AI provider, a coral
+/// button for it comes first and the dismiss button below it is outlined. The dog is decorative; the
+/// text carries the message. It fades and scales in over 200 ms, with no animation under Reduce Motion.
+/// Identifiers are `<prefix>.error-popup`, `<prefix>.error-title`, `<prefix>.error-action` and
+/// `<prefix>.error-dismiss`, plus `messageIdentifier` on the message.
 struct MascotErrorPopup: View {
+    struct Action {
+        let title: String
+        let hint: String
+        let perform: () -> Void
+    }
+
     let title: String
     let message: String
     var messageIdentifier = "wizard.error"
+    var identifierPrefix = "wizard"
+    var action: Action?
+    var dismissTitle = "OK"
     let onDismiss: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
@@ -333,7 +345,7 @@ struct MascotErrorPopup: View {
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    // Swallows taps, so the backdrop never dismisses the popup; only OK does.
+                    // Swallows taps, so the backdrop never dismisses the popup; only its buttons do.
                 }
                 .accessibilityHidden(true)
             VStack(spacing: 12) {
@@ -343,7 +355,7 @@ struct MascotErrorPopup: View {
                         .font(.headline)
                         .foregroundStyle(CVeeColors.ink)
                         .accessibilityAddTraits(.isHeader)
-                        .accessibilityIdentifier("wizard.error-title")
+                        .accessibilityIdentifier("\(identifierPrefix).error-title")
                     Text(message)
                         .font(.subheadline)
                         .foregroundStyle(CVeeColors.secondary)
@@ -351,10 +363,18 @@ struct MascotErrorPopup: View {
                 }
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-                Button(action: onDismiss) { Text("OK").frame(maxWidth: .infinity) }
-                    .buttonStyle(CoralButtonStyle())
-                    .accessibilityIdentifier("wizard.error-dismiss")
-                    .padding(.top, 4)
+                VStack(spacing: 10) {
+                    if let action {
+                        Button(action: action.perform) { Text(action.title).frame(maxWidth: .infinity) }
+                            .buttonStyle(CoralButtonStyle())
+                            .accessibilityHint(action.hint)
+                            .accessibilityIdentifier("\(identifierPrefix).error-action")
+                        dismissButton.buttonStyle(CoralOutlineButtonStyle())
+                    } else {
+                        dismissButton.buttonStyle(CoralButtonStyle())
+                    }
+                }
+                .padding(.top, 4)
             }
             .padding(20)
             .frame(maxWidth: 340)
@@ -364,11 +384,72 @@ struct MascotErrorPopup: View {
             .scaleEffect(appeared ? 1 : 0.92)
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
-            .accessibilityIdentifier("wizard.error-popup")
+            .accessibilityIdentifier("\(identifierPrefix).error-popup")
         }
         .opacity(appeared ? 1 : 0)
         .onAppear {
             if reduceMotion { appeared = true } else { withAnimation(.easeOut(duration: 0.2)) { appeared = true } }
         }
+    }
+
+    private var dismissButton: some View {
+        Button(action: onDismiss) { Text(dismissTitle).frame(maxWidth: .infinity) }
+            .accessibilityIdentifier("\(identifierPrefix).error-dismiss")
+    }
+}
+
+/// The launch loader: the joyful dog hops over a soft shadow, above "Fetching your tasks" and three
+/// coral dots that pulse in turn, until the Tasks mascot is ready (see `ContentView`). Reduce Motion
+/// keeps the dog and dots still. It reads as one element, "Loading CVee".
+struct MascotLoader: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    /// One hop, up and back down; the dots pulse once per hop.
+    private let hopDuration: Double = 0.8
+
+    var body: some View {
+        TimelineView(.animation(paused: reduceMotion)) { context in
+            let phase = reduceMotion ? 0
+                : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: hopDuration) / hopDuration
+            // 0 on the ground and 1 at the top of the hop; the squash only shows as the dog lands.
+            let lift = sin(.pi * phase)
+            let squash = pow(1 - lift, 6)
+            VStack(spacing: 20) {
+                ZStack(alignment: .bottom) {
+                    // The shadow shrinks and fades as the dog rises; dark appearance needs a deeper one.
+                    Ellipse()
+                        .fill(Color.black.opacity((colorScheme == .dark ? 0.4 : 0.12) * (1 - 0.5 * lift)))
+                        .frame(width: 84 * (1 - 0.3 * lift), height: 12)
+                    Image(MascotMood.joyful.stillImageName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 128, height: 128)
+                        .scaleEffect(x: 1 + 0.05 * squash, y: 1 - 0.06 * squash, anchor: .bottom)
+                        .rotationEffect(.degrees(4 * sin(2 * .pi * phase)), anchor: .bottom)
+                        .offset(y: -6 - 22 * lift)
+                }
+                .frame(height: 170, alignment: .bottom)
+                VStack(spacing: 12) {
+                    Text("Fetching your tasks")
+                        .font(.headline)
+                        .foregroundStyle(CVeeColors.ink)
+                    HStack(spacing: 8) {
+                        ForEach(0..<3, id: \.self) { index in
+                            let pulse = reduceMotion ? 1 : max(0, sin(2 * .pi * (phase - Double(index) * 0.15)))
+                            Circle()
+                                .fill(CVeeColors.coral)
+                                .frame(width: 8, height: 8)
+                                .scaleEffect(0.7 + 0.3 * pulse)
+                                .opacity(0.35 + 0.65 * pulse)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(CVeeColors.page.ignoresSafeArea())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading CVee")
+        .accessibilityIdentifier("app.loader")
     }
 }
