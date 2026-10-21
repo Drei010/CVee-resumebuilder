@@ -356,7 +356,8 @@ struct TaskMetricCard: View {
     }
 }
 
-/// Lets people show, hide and reorder the progress widgets.
+/// Lets people show, hide and reorder the progress widgets. Changes apply on Save, below Reset to
+/// default; Back closes the sheet without them.
 struct TaskMetricWidgetEditor: View {
     @Binding var layoutRaw: String
     @Environment(\.dismiss) private var dismiss
@@ -375,8 +376,8 @@ struct TaskMetricWidgetEditor: View {
                         row(widget)
                             .accessibilityIdentifier("tasks.metrics.shown.\(widget.rawValue)")
                     }
-                    .onMove { shown.move(fromOffsets: $0, toOffset: $1); save() }
-                    .onDelete { shown.remove(atOffsets: $0); save() }
+                    .onMove { shown.move(fromOffsets: $0, toOffset: $1) }
+                    .onDelete { shown.remove(atOffsets: $0) }
                 } header: {
                     Text("Shown on Tasks")
                 } footer: {
@@ -388,7 +389,6 @@ struct TaskMetricWidgetEditor: View {
                         ForEach(available) { widget in
                             Button {
                                 shown.append(widget)
-                                save()
                             } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: "plus.circle.fill")
@@ -408,14 +408,25 @@ struct TaskMetricWidgetEditor: View {
                 }
 
                 Section {
-                    Button("Reset to default") {
-                        shown = TaskMetricWidget.defaultLayout
-                        save()
+                    VStack(spacing: 12) {
+                        Button {
+                            shown = TaskMetricWidget.defaultLayout
+                        } label: {
+                            Text("Reset to default").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(CoralOutlineButtonStyle())
+                        .disabled(shown == TaskMetricWidget.defaultLayout)
+                        .accessibilityIdentifier("tasks.metrics.reset")
+                        Button {
+                            layoutRaw = TaskMetricLayout.encode(shown)
+                            dismiss()
+                        } label: {
+                            Text("Save").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(CoralButtonStyle())
+                        .accessibilityIdentifier("tasks.metrics.save")
                     }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(CVeeColors.actionInk)
-                    .disabled(shown == TaskMetricWidget.defaultLayout)
-                    .accessibilityIdentifier("tasks.metrics.reset")
+                    .listRowBackground(Color.clear)
                 }
             }
             .environment(\.editMode, .constant(.active))
@@ -423,9 +434,10 @@ struct TaskMetricWidgetEditor: View {
             .navigationTitle("Progress widgets")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .accessibilityIdentifier("tasks.metrics.done")
+                // Edits stay in the sheet until Save; Back (or swiping the sheet down) leaves the
+                // widgets on Tasks as they were.
+                ToolbarItem(placement: .topBarLeading) {
+                    SheetBackButton(identifier: "tasks.metrics.back") { dismiss() }
                 }
             }
         }
@@ -454,9 +466,5 @@ struct TaskMetricWidgetEditor: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-    }
-
-    private func save() {
-        layoutRaw = TaskMetricLayout.encode(shown)
     }
 }

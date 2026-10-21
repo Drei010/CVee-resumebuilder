@@ -28,7 +28,7 @@ final class ResumeWizardUITests: XCTestCase {
         add.tap()
         app.buttons["Add manually"].tap()
         XCTAssertTrue(app.textFields["Job title"].waitForExistence(timeout: timeout))
-        app.buttons["Cancel"].tap()
+        app.buttons["task.back"].tap()
         for tab in ["Saved Jobs", "Resume Wizard", "Resumes", "Profile"] {
             selectTab(tab, in: app)
             XCTAssertTrue(app.navigationBars[tab].waitForExistence(timeout: timeout))
@@ -58,7 +58,13 @@ final class ResumeWizardUITests: XCTestCase {
             app.buttons["Cancel"].tap()
             return
         }
-        app.buttons["Sheet Grabber"].firstMatch.swipeUp()
+        // The sheet opens at full height, with no grabber to drag, and Confirm recording spans its bar.
+        let recordBar = app.navigationBars["Record task"]
+        XCTAssertLessThan(recordBar.frame.minY, app.frame.height * 0.2, "The record sheet reaches the top")
+        XCTAssertFalse(app.buttons["Sheet Grabber"].exists)
+        let confirm = app.buttons["tasks.confirm-recording"]
+        XCTAssertEqual(confirm.frame.width, recordBar.frame.width - 32, accuracy: 2, "Confirm recording spans the sheet")
+        capture(app, "tasks-record-sheet")
         XCTAssertTrue(tapWhenHittable(app.buttons["tasks.confirm-company"], in: app))
         XCTAssertTrue(app.buttons["New company"].waitForExistence(timeout: timeout))
         app.buttons["New company"].tap()
@@ -235,13 +241,49 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(tapWhenHittable(app.buttons["tasks.record"], in: app))
         app.buttons["tasks.record.improve-ai"].tap()
 
-        XCTAssertTrue(app.staticTexts["task.ai-review.error"].waitForExistence(timeout: timeout))
-        XCTAssertFalse(app.buttons["task.ai-review.use"].isEnabled)
-        let keepOriginal = app.buttons["task.ai-review.keep"]
-        XCTAssertTrue(revealBelow(keepOriginal, in: app))
-        keepOriginal.tap()
+        // A failure shows as the mascot popup: Configure AI provider, then Not now below it.
+        let popup = app.descendants(matching: .any)["task.ai-review.error-popup"]
+        XCTAssertTrue(popup.waitForExistence(timeout: timeout))
+        XCTAssertEqual(app.staticTexts["task.ai-review.error-title"].label, "Couldn’t get an AI suggestion")
+        XCTAssertTrue(app.staticTexts["task.ai-review.error"].exists)
+        let configure = app.buttons["task.ai-review.error-action"]
+        let notNow = app.buttons["task.ai-review.error-dismiss"]
+        XCTAssertTrue(configure.exists)
+        XCTAssertEqual(notNow.label, "Not now")
+        XCTAssertLessThanOrEqual(configure.frame.maxY, notNow.frame.minY)
+        capture(app, "tasks-ai-review-error-popup")
+        // Not now closes the review and keeps the original details.
+        notNow.tap()
+        XCTAssertTrue(waitForDisappearance(popup))
         XCTAssertTrue((app.textFields["tasks.record.details"].value as? String ?? "").contains(original))
         app.buttons["Cancel"].tap()
+    }
+
+    func testAIEnhancementFailureOpensAIProviderInProfile() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-ui-testing-ai-failure"]
+        app.launch()
+
+        let original = "Improved the onboarding flow."
+        let details = expandTaskCapture(app)
+        details.tap()
+        details.typeText(original)
+        dismissKeyboard(in: app)
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.record"], in: app))
+        app.buttons["tasks.record.improve-ai"].tap()
+        let configure = app.buttons["task.ai-review.error-action"]
+        XCTAssertTrue(configure.waitForExistence(timeout: timeout))
+        configure.tap()
+
+        // The sheets close and Profile opens on AI Provider; the quick capture draft stays on Tasks.
+        XCTAssertTrue(app.navigationBars["AI Provider"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.buttons["ai-provider.selector"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(waitForDisappearance(app.buttons["tasks.confirm-recording"]))
+        capture(app, "tasks-ai-error-opens-ai-provider")
+        selectTab("Tasks", in: app)
+        let restored = app.textFields["tasks.capture-details"]
+        XCTAssertTrue(restored.waitForExistence(timeout: timeout))
+        XCTAssertTrue((restored.value as? String ?? "").contains(original))
     }
 
     func testAIEnhancementEmptyResponseCannotBeApplied() {
@@ -256,12 +298,13 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(tapWhenHittable(app.buttons["tasks.record"], in: app))
         app.buttons["tasks.record.improve-ai"].tap()
 
-        XCTAssertTrue(app.staticTexts["task.ai-review.error"].waitForExistence(timeout: timeout))
-        XCTAssertFalse(app.buttons["task.ai-review.use"].isEnabled)
+        let popup = app.descendants(matching: .any)["task.ai-review.error-popup"]
+        XCTAssertTrue(popup.waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.staticTexts["task.ai-review.error"].exists)
         // On iPad both stacked sheets show a Cancel button, so close the review explicitly first.
-        let keepOriginal = app.buttons["task.ai-review.keep"]
-        XCTAssertTrue(revealBelow(keepOriginal, in: app))
-        keepOriginal.tap()
+        app.buttons["task.ai-review.error-dismiss"].tap()
+        XCTAssertTrue(waitForDisappearance(popup))
+        XCTAssertFalse(app.buttons["task.ai-review.use"].exists)
         app.buttons["Cancel"].tap()
     }
 
@@ -281,10 +324,18 @@ final class ResumeWizardUITests: XCTestCase {
         details.typeText("Improved the onboarding flow.")
         dismissKeyboard(in: app)
         app.buttons["task.enhance-ai"].tap()
-        XCTAssertTrue(app.buttons["task.ai-review.use"].waitForExistence(timeout: timeout))
-        app.buttons["task.ai-review.use"].tap()
+        // Keep original sits on the left of Use suggestion, as an outlined button of the same width.
+        let keep = app.buttons["task.ai-review.keep"]
+        let use = app.buttons["task.ai-review.use"]
+        XCTAssertTrue(use.waitForExistence(timeout: timeout))
+        XCTAssertTrue(keep.exists)
+        XCTAssertLessThanOrEqual(keep.frame.maxX, use.frame.minX)
+        XCTAssertLessThan(abs(keep.frame.midY - use.frame.midY), 2)
+        XCTAssertEqual(keep.frame.width, use.frame.width, accuracy: 1)
+        capture(app, "tasks-ai-review-suggestion")
+        use.tap()
         XCTAssertTrue((details.value as? String ?? "").contains("Improved task details for testing"))
-        app.buttons["Cancel"].tap()
+        app.buttons["task.back"].tap()
     }
 
     func testAIEnhancementReviewWorksInExistingTaskEditor() {
@@ -326,12 +377,13 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertFalse(app.buttons["tasks.capture-card"].exists)
         XCTAssertEqual((restored.value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), draft)
 
+        // With a draft, Task actions still holds only Add manually and Import tasks: no Discard draft.
         app.buttons["tasks.actions"].tap()
-        XCTAssertTrue(app.buttons["tasks.discard-draft"].waitForExistence(timeout: timeout))
-        app.buttons["tasks.discard-draft"].tap()
-        XCTAssertTrue(app.buttons["tasks.discard-draft-confirm"].waitForExistence(timeout: timeout))
-        app.buttons["tasks.discard-draft-confirm"].firstMatch.tap()
-        XCTAssertFalse(app.buttons["tasks.record"].isEnabled)
+        XCTAssertTrue(app.buttons["tasks.add-manually"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.buttons["tasks.import"].exists)
+        XCTAssertFalse(app.buttons["tasks.discard-draft"].exists)
+        XCTAssertFalse(app.buttons["Discard draft"].exists)
+        capture(app, "tasks-actions-menu-with-draft")
     }
 
     func testTaskCreationImportAndClearConfirmation() {
@@ -360,7 +412,7 @@ final class ResumeWizardUITests: XCTestCase {
         capture(app, "tasks-actions-menu-with-tasks")
         importTasks.tap()
         XCTAssertTrue(app.buttons["import.choose-document"].waitForExistence(timeout: timeout))
-        app.buttons["Cancel"].tap()
+        app.buttons["import.back"].tap()
         selectTab("Profile", in: app)
         let clearAll = app.buttons["Clear all data"]
         XCTAssertTrue(revealHittable(clearAll, in: app))
@@ -393,9 +445,114 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertLessThan(addManually.frame.midY, importTasks.frame.midY)
         capture(app, "tasks-actions-menu")
         importTasks.tap()
-        XCTAssertTrue(app.buttons["import.choose-document"].waitForExistence(timeout: timeout))
+        let choose = app.buttons["import.choose-document"]
+        XCTAssertTrue(choose.waitForExistence(timeout: timeout))
+        // A button that fills a Form row reports the whole row as its frame, wider than the inset field.
+        XCTAssertGreaterThanOrEqual(choose.frame.width, app.textFields["import.job-title"].frame.width - 8, "Choose document spans its row")
+        XCTAssertFalse(app.buttons["Cancel"].exists)
+        capture(app, "tasks-import-sheet")
+        app.buttons["import.back"].tap()
+        XCTAssertTrue(waitForDisappearance(choose))
+    }
+
+    func testLaunchLoaderShowsMascotThenTasks() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-ui-testing-launch-loader"]
+        app.launch()
+        // The hopping dog covers launch until the Tasks mascot is ready, then hands over to the tabs.
+        let loader = app.descendants(matching: .any)["app.loader"]
+        XCTAssertTrue(loader.waitForExistence(timeout: timeout))
+        XCTAssertEqual(loader.label, "Loading CVee")
+        XCTAssertFalse(app.buttons["tasks.actions"].exists, "Tasks waits behind the loader")
+        capture(app, "launch-loader")
+        XCTAssertTrue(waitForDisappearance(loader))
+        XCTAssertTrue(app.buttons["tasks.capture-card"].waitForExistence(timeout: timeout))
+    }
+
+    func testTasksTitleSharesBarWithTaskActions() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+        let actions = app.buttons["tasks.actions"]
+        XCTAssertTrue(actions.waitForExistence(timeout: timeout))
+        // iPad keeps the large title, since its bar shares a row with the tab bar.
+        guard isPhone else { return }
+        // On iPhone the title leads the bar, level with Task actions on the right.
+        // The bar also keeps a 1-point system title with the same label, so match the visible one.
+        let title = app.navigationBars["Tasks"].staticTexts["bar.title"]
+        XCTAssertTrue(title.exists)
+        XCTAssertEqual(title.label, "Tasks")
+        XCTAssertLessThan(abs(title.frame.midY - actions.frame.midY), 12)
+        XCTAssertLessThan(title.frame.maxX, app.frame.midX)
+        XCTAssertLessThan(title.frame.maxX, actions.frame.minX)
+        capture(app, "tasks-title-in-bar")
+    }
+
+    func testAddTaskSheetLeadsWithBackAndTitle() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+        app.buttons["tasks.actions"].tap()
+        let addManually = app.buttons["tasks.add-manually"]
+        XCTAssertTrue(addManually.waitForExistence(timeout: timeout))
+        addManually.tap()
+
+        // Back replaces Cancel, and the title sits beside it in the bar rather than in a row below.
+        let back = app.buttons["task.back"]
+        XCTAssertTrue(back.waitForExistence(timeout: timeout))
+        XCTAssertFalse(app.buttons["Cancel"].exists)
+        // The bar also keeps a 1-point system title with the same label, so match the visible one.
+        let title = app.navigationBars["Add task"].staticTexts["bar.title"]
+        XCTAssertTrue(title.exists)
+        XCTAssertEqual(title.label, "Add task")
+        XCTAssertLessThan(abs(title.frame.midY - back.frame.midY), 12)
+        XCTAssertGreaterThan(title.frame.minX, back.frame.maxX)
+
+        let role = app.textFields["task.role"]
+        XCTAssertTrue(role.waitForExistence(timeout: timeout))
+        let fieldWidth = role.frame.width
+        let save = app.buttons["task.save"]
+        XCTAssertTrue(revealHittable(save, in: app))
+        // A button that fills a Form row reports the whole row as its frame, wider than the inset field.
+        XCTAssertGreaterThanOrEqual(save.frame.width, fieldWidth - 8, "Add task spans its row")
+        capture(app, "tasks-add-task-sheet")
+        back.tap()
+        XCTAssertTrue(waitForDisappearance(back))
+    }
+
+    func testTaskDetailsKeepOneTitleAndOneLineDeleteMessage() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-resume-format-fixture"]
+        app.launch()
+        let task = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Reduced manual search time'")).firstMatch
+        XCTAssertTrue(revealHittable(task, in: app))
+        task.tap()
+        let edit = app.buttons["task.edit"]
+        XCTAssertTrue(edit.waitForExistence(timeout: timeout))
+        // Reading, the sheet's title is the only "Task details": the section no longer repeats it.
+        let detailsTitles = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'Task details'"))
+        XCTAssertEqual(detailsTitles.count, 1)
+        capture(app, "task-detail")
+
+        edit.tap()
+        let titleField = app.textFields["Task title"]
+        XCTAssertTrue(titleField.waitForExistence(timeout: timeout))
+        let fieldWidth = titleField.frame.width
+        let save = app.buttons["task.detail.save"]
+        XCTAssertTrue(revealHittable(save, in: app))
+        XCTAssertGreaterThanOrEqual(save.frame.width, fieldWidth - 8, "Save changes spans its row")
+        capture(app, "task-detail-edit")
         app.buttons["Cancel"].tap()
-        XCTAssertTrue(waitForDisappearance(app.buttons["import.choose-document"]))
+
+        XCTAssertTrue(tapWhenHittable(app.buttons["task.delete"], in: app))
+        let alert = app.alerts["Confirm delete"]
+        XCTAssertTrue(alert.waitForExistence(timeout: timeout))
+        XCTAssertTrue(alert.staticTexts["This can’t be undone."].exists)
+        capture(app, "task-detail-delete-alert")
+        alert.buttons["Cancel"].tap()
+        XCTAssertTrue(waitForDisappearance(alert))
+        XCTAssertTrue(edit.exists, "Cancel keeps the task")
+        app.buttons["Done"].tap()
     }
 
     func testDarkLargeTextTaskLayout() {
@@ -568,6 +725,9 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(waitForDisappearance(companyChip))
         XCTAssertTrue(job.exists)
     }
+
+    /// The app element reports no size class to XCUITest, so tell iPhone from iPad by the device idiom.
+    private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     private func capture(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
@@ -941,17 +1101,37 @@ final class ResumeWizardUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["tasks.metric.resumeUsage"].waitForExistence(timeout: timeout))
         XCTAssertFalse(recent.exists)
 
+        // Back closes the editor without saving, so the added widget doesn't reach Tasks.
         XCTAssertTrue(tapWhenHittable(app.buttons["tasks.metrics.edit"], in: app))
         XCTAssertTrue(tapWhenHittable(app.buttons["tasks.metrics.add.recentTasks"], in: app))
         XCTAssertTrue(app.descendants(matching: .any)["tasks.metrics.shown.recentTasks"].waitForExistence(timeout: timeout))
+        XCTAssertFalse(app.buttons["tasks.metrics.done"].exists)
+        let back = app.buttons["tasks.metrics.back"]
+        XCTAssertTrue(back.exists)
+        back.tap()
+        XCTAssertTrue(waitForDisappearance(back))
+        XCTAssertTrue(app.descendants(matching: .any)["tasks.metric.resumeUsage"].waitForExistence(timeout: timeout))
+        XCTAssertFalse(recent.exists)
+
+        // Save sits below Reset to default, at the same full width, and applies the change.
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.metrics.edit"], in: app))
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.metrics.add.recentTasks"], in: app))
+        XCTAssertTrue(app.descendants(matching: .any)["tasks.metrics.shown.recentTasks"].waitForExistence(timeout: timeout))
+        let reset = app.buttons["tasks.metrics.reset"]
+        let save = app.buttons["tasks.metrics.save"]
+        XCTAssertTrue(revealHittable(save, in: app))
+        XCTAssertTrue(reset.isEnabled)
+        XCTAssertLessThanOrEqual(reset.frame.maxY, save.frame.minY)
+        XCTAssertEqual(reset.frame.width, save.frame.width, accuracy: 1)
+        XCTAssertGreaterThan(save.frame.width, app.navigationBars["Progress widgets"].frame.width * 0.75, "Save spans the sheet")
         capture(app, "tasks-widget-editor")
-        app.buttons["tasks.metrics.done"].tap()
+        save.tap()
         XCTAssertTrue(recent.waitForExistence(timeout: timeout))
         XCTAssertTrue((recent.value as? String ?? "").contains("1 task recorded"))
 
         XCTAssertTrue(tapWhenHittable(app.buttons["tasks.metrics.edit"], in: app))
         XCTAssertTrue(tapWhenHittable(app.buttons["tasks.metrics.reset"], in: app))
-        app.buttons["tasks.metrics.done"].tap()
+        XCTAssertTrue(tapWhenHittable(app.buttons["tasks.metrics.save"], in: app))
         XCTAssertTrue(app.descendants(matching: .any)["tasks.metric.companyMix"].waitForExistence(timeout: timeout))
         XCTAssertFalse(recent.exists)
     }
@@ -1113,9 +1293,10 @@ final class ResumeWizardUITests: XCTestCase {
         // On iPhone the title sits in the navigation bar beside Back, above the bubble.
         let back = app.buttons["wizard.back"]
         XCTAssertTrue(back.exists)
-        if app.horizontalSizeClass == .compact {
-            let title = app.navigationBars["Resume Wizard"].staticTexts["Resume Wizard"]
+        if isPhone {
+            let title = app.navigationBars["Resume Wizard"].staticTexts["bar.title"]
             XCTAssertTrue(title.exists)
+            XCTAssertEqual(title.label, "Resume Wizard")
             XCTAssertLessThan(abs(title.frame.midY - back.frame.midY), 12)
             XCTAssertGreaterThan(title.frame.minX, back.frame.maxX)
             XCTAssertLessThan(title.frame.maxY, mascot.frame.minY)

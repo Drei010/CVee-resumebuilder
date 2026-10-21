@@ -2,6 +2,21 @@
 
 Dated history of shipped changes, newest first. Dated entries come from the git history (commit dates, pull request numbers from merge commits, and short commit hashes where one day holds several commits) and from the dated reports in [design-audit/](design-audit/README.md). What CVee does today is in [README.md](README.md); planned work is in [ROADMAP.md](ROADMAP.md).
 
+## 2026-10-21
+
+### Tasks, round four
+
+Captures: [design-audit/2026-10-21-tasks-round-four/](design-audit/2026-10-21-tasks-round-four/) (13 iPhone screens).
+
+- CVee opens with a loader: the joyful dog hops above "Fetching your tasks" and three pulsing coral dots until the Tasks mascot's animation is decoded (at least 0.9 seconds, and no more than 2.5 seconds of waiting), so the greeting no longer starts on its still image. Reduce Motion keeps the dog and the dots still.
+- On iPhone the Tasks title moves from its large-title row into the navigation bar, level with Task actions. In that menu, Add manually gets a compose icon and Discard draft is gone.
+- The record sheet opens at full height, with no medium detent or grabber, and Confirm recording spans its bottom bar.
+- The AI review moves its actions into a bottom bar: Keep original on the left, as a new outlined button (white with a coral outline and a deeper coral label, since coral text on white is hard to read), and Use suggestion on the right. A failed suggestion shows the mascot popup instead of red text: "Configure AI provider" closes the task sheets and opens Profile → AI Provider, keeping the quick capture draft, and "Not now" keeps the original.
+- Add task and Import Tasks List close with a Back chevron instead of Cancel, and Add task's title sits beside it in the bar. Add task, Save changes, and Choose document (now coral, with a document icon) span their rows.
+- The Progress widgets editor closes with a Back chevron instead of Done, and changes apply only with Save, a full-width coral button below Reset to default, which is now outlined. Back, or swiping the sheet down, leaves the widgets as they were.
+- Task detail no longer repeats "Task details" as a section header while reading (it returns while editing, where it holds Enhance with AI). Its delete alert reads "This can’t be undone." on one line, and Cancel there and in the Tasks delete alert shows in ink instead of the accent.
+- New UI tests cover the launch loader (`-ui-testing-launch-loader`), the Tasks title in the bar, the Add task sheet's Back and title, the AI error popup and its route to AI Provider, the task detail header, Save changes, and delete alert, and the widget editor's Back and Save; the Discard draft steps are replaced by a check that the menu no longer offers it.
+
 ## 2026-10-20
 
 ### Profile, round one

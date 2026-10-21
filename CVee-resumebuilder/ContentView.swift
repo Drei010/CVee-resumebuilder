@@ -55,6 +55,65 @@ struct CoralButtonStyle: ButtonStyle {
     }
 }
 
+/// The secondary partner of `CoralButtonStyle`, such as Keep original and Reset to default: the page
+/// background (white in light appearance) with a coral outline and an action-ink label, the deeper
+/// coral that stays readable on white. Pressing tints it coral; disabled drops it to 40%.
+struct CoralOutlineButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(CVeeColors.actionInk)
+            .padding(.horizontal, 26).padding(.vertical, 13)
+            .frame(minHeight: 44)
+            .background(configuration.isPressed ? CVeeColors.coral.opacity(0.12) : CVeeColors.page,
+                        in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(CVeeColors.coral, lineWidth: 1.5))
+            .opacity(isEnabled ? 1 : 0.4)
+    }
+}
+
+/// The chevron that closes a sheet from its top leading corner, in place of a Cancel button.
+struct SheetBackButton: View {
+    let identifier: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) { Image(systemName: "chevron.left") }
+            .accessibilityLabel("Back")
+            .accessibilityHint("Closes without saving")
+            .accessibilityIdentifier(identifier)
+    }
+}
+
+/// A screen title at the leading edge of the navigation bar, after any Back button, used on iPhone by
+/// Tasks, the Resume Wizard and the Add task sheet. An empty principal item replaces the centered title,
+/// and the navigation title stays set, so the bar keeps its name.
+struct LeadingBarTitle: ToolbarContent {
+    let title: String
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1).accessibilityHidden(true) }
+        ToolbarItem(placement: .topBarLeading) {
+            Text(title)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(CVeeColors.ink)
+                .lineLimit(1)
+                .fixedSize()
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("bar.title")
+        }
+        .sharedBackgroundVisibility(.hidden)
+    }
+}
+
+extension Notification.Name {
+    /// Opens Profile › AI Provider from anywhere, for example from the AI suggestion error popup. The
+    /// Tasks tab and the Resume Wizard close their task sheets on the way.
+    static let cveeOpenAIProvider = Notification.Name("cveeOpenAIProvider")
+}
+
 struct WorkspaceSurface: ViewModifier {
     func body(content: Content) -> some View {
         content.frame(maxWidth: 760)
@@ -236,12 +295,37 @@ private struct ActiveFilterChip: View {
     }
 }
 
+/// The screens Profile pushes. A path drives its stack, so another flow can open AI Provider directly.
+enum ProfileRoute: Hashable {
+    case terms, aiProvider
+}
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityPlayAnimatedImages) private var playAnimatedImages
     @State private var selectedTab = 0
+    @State private var profilePath: [ProfileRoute] = []
+    /// The mascot loader covers launch until the Tasks mascot is ready. UI tests skip it unless they
+    /// pass `-ui-testing-launch-loader`.
+    @State private var isLaunching = !ProcessInfo.processInfo.arguments.contains("-ui-testing")
+        || ProcessInfo.processInfo.arguments.contains("-ui-testing-launch-loader")
 
     var body: some View {
+        ZStack {
+            if isLaunching {
+                MascotLoader()
+                    .transition(.opacity)
+            } else {
+                tabs
+                    .transition(.opacity)
+            }
+        }
+        .task { await finishLaunching() }
+    }
+
+    private var tabs: some View {
         TabView(selection: $selectedTab) {
             NavigationStack { WorkHistoryView() }
                 .tabItem { Label("Tasks", systemImage: "checklist") }
@@ -257,7 +341,7 @@ struct ContentView: View {
             NavigationStack { ResumesView(onCreateResume: { selectedTab = 2 }) }
                 .tabItem { Label("Resumes", systemImage: "doc.text") }
                 .tag(3)
-            NavigationStack { ProfileView() }
+            NavigationStack(path: $profilePath) { ProfileView() }
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
                 .tag(4)
         }
@@ -268,6 +352,43 @@ struct ContentView: View {
         .toolbarBackground(CVeeColors.page, for: .tabBar, .navigationBar)
         .task { importPendingCaptures() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { importPendingCaptures() } }
+        .onReceive(NotificationCenter.default.publisher(for: .cveeOpenAIProvider)) { _ in
+            selectedTab = 4
+            profilePath = [.aiProvider]
+        }
+    }
+
+    /// Holds the loader until the Tasks mascot's animation is decoded, so the dog greets without
+    /// popping from its still image, and for at least 0.9 seconds so the loader never just flashes.
+    /// It stops waiting for the decode after 2.5 seconds.
+    private func finishLaunching() async {
+        guard isLaunching else { return }
+        let start = ContinuousClock.now
+        if !reduceMotion && playAnimatedImages {
+            // The same mood the Tasks greeting opens with: curious for an empty library, wink otherwise.
+            let hasTasks = ((try? modelContext.fetchCount(FetchDescriptor<WorkExperience>())) ?? 0) > 0
+            let mood: MascotMood = hasTasks ? .wink : .curious
+            let assetName = mood.animationAssetName
+            let key = mood.rawValue
+            // The decoded frames or 2.5 seconds, whichever comes first, end the wait. A slow decode
+            // carries on in the background and still fills the cache for the greeting.
+            let (ready, signal) = AsyncStream<Void>.makeStream()
+            Task.detached(priority: .userInitiated) {
+                _ = MascotAnimationCache.decode(assetName: assetName, key: key)
+                signal.yield()
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(2.5))
+                signal.yield()
+            }
+            for await _ in ready { break }
+            signal.finish()
+        }
+        // The loader's UI test holds it longer, so it is still showing when the test starts looking.
+        let minimum: Duration = ProcessInfo.processInfo.arguments.contains("-ui-testing-launch-loader") ? .seconds(3) : .milliseconds(900)
+        let remaining = minimum - start.duration(to: .now)
+        if remaining > .zero { try? await Task.sleep(for: remaining) }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { isLaunching = false }
     }
 
     private func importPendingCaptures() {
@@ -312,7 +433,7 @@ struct ProfileView: View {
                 Label("AI uses Apple on-device when selected, or your configured provider.", systemImage: "lock.shield")
                     .foregroundStyle(.secondary)
                 Label("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")", systemImage: "info.circle")
-                NavigationLink { TermsAndConditionsView() } label: {
+                NavigationLink(value: ProfileRoute.terms) {
                     Label("Terms and conditions", systemImage: "doc.text")
                 }
                 Link(destination: URL(string: "mailto:andreihidalgo16@gmail.com")!) {
@@ -320,9 +441,7 @@ struct ProfileView: View {
                 }
             }
             Section("Advanced settings") {
-                NavigationLink {
-                    AIProviderView()
-                } label: {
+                NavigationLink(value: ProfileRoute.aiProvider) {
                     LabeledContent("AI Provider", value: AIProviderSelection().provider()?.name ?? "Not configured")
                 }
                 .accessibilityIdentifier("profile.ai-provider")
@@ -331,6 +450,12 @@ struct ProfileView: View {
         }
         .modifier(WorkspaceSurface())
         .navigationTitle("Profile")
+        .navigationDestination(for: ProfileRoute.self) { route in
+            switch route {
+            case .terms: TermsAndConditionsView()
+            case .aiProvider: AIProviderView()
+            }
+        }
         .sheet(isPresented: $showingEdit) {
             ProfileEditView(name: $name, email: $email, phone: $phone, location: $location, linkedin: $linkedin, github: $github, education: $education, skills: $skills, certifications: $certifications) { showingSavedMessage = true }
         }
@@ -788,25 +913,6 @@ private struct TaskEnhancementReviewView: View {
                         .accessibilityLabel("Suggested task details")
                         .accessibilityIdentifier("task.ai-review.suggested")
                     if isLoading { ProgressView("Preparing suggestion…") }
-                    if let errorMessage {
-                        Text(errorMessage).font(.caption).foregroundStyle(.red)
-                            .accessibilityIdentifier("task.ai-review.error")
-                    }
-                }
-                Section {
-                    Button("Use suggestion") {
-                        let value = suggestion.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard canUseSuggestion else { return }
-                        onUse(original, value)
-                        dismiss()
-                    }
-                    .buttonStyle(CoralButtonStyle())
-                    .frame(maxWidth: .infinity)
-                    .disabled(!canUseSuggestion)
-                    .accessibilityIdentifier("task.ai-review.use")
-                    Button("Keep original") { dismiss() }
-                        .frame(maxWidth: .infinity)
-                        .accessibilityIdentifier("task.ai-review.keep")
                 }
             }
             .modifier(WorkspaceSurface())
@@ -816,6 +922,45 @@ private struct TaskEnhancementReviewView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+            }
+            // Keep original on the left as the outlined secondary action, Use suggestion on the right.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 0) {
+                    Divider()
+                    HStack(spacing: 12) {
+                        Button { dismiss() } label: {
+                            Text("Keep original").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(CoralOutlineButtonStyle())
+                        .accessibilityIdentifier("task.ai-review.keep")
+                        Button {
+                            let value = suggestion.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard canUseSuggestion else { return }
+                            onUse(original, value)
+                            dismiss()
+                        } label: {
+                            Text("Use suggestion").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(CoralButtonStyle())
+                        .disabled(!canUseSuggestion)
+                        .accessibilityIdentifier("task.ai-review.use")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                }
+                .background(.bar)
+            }
+        }
+        // A failure shows as the mascot popup. Configure AI provider leaves for Profile › AI Provider,
+        // and Not now closes this review, keeping the original text.
+        .overlay {
+            if let errorMessage {
+                MascotErrorPopup(title: "Couldn’t get an AI suggestion", message: errorMessage,
+                                 messageIdentifier: "task.ai-review.error", identifierPrefix: "task.ai-review",
+                                 action: .init(title: "Configure AI provider", hint: "Opens AI Provider in Profile") {
+                                     NotificationCenter.default.post(name: .cveeOpenAIProvider, object: nil)
+                                 },
+                                 dismissTitle: "Not now") { dismiss() }
             }
         }
         .presentationDetents([.large])
@@ -838,6 +983,9 @@ private struct TaskEnhancementReviewView: View {
                 errorMessage = error.localizedDescription
                 isLoading = false
             }
+        }
+        .onChange(of: errorMessage) { _, message in
+            if let message { UIAccessibility.post(notification: .announcement, argument: message) }
         }
         .onDisappear { requestID = UUID() }
     }
@@ -875,14 +1023,13 @@ struct WorkHistoryView: View {
     @State private var showingRecordConfirmation = false
     @State private var recordError: String?
     @State private var showingTaskEnhancementReview = false
-    @State private var showingDiscardDraftAlert = false
     @State private var hasEditedCapture = false
-    @State private var recordSheetDetent: PresentationDetent = .medium
     @State private var celebrationID: UUID?
     @FocusState private var focusedCaptureField: CaptureField?
     @FocusState private var focusedRecordField: RecordField?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ScaledMetric(relativeTo: .title3) private var captureIconSize: CGFloat = 36
 
     private var companies: [String] {
@@ -910,9 +1057,10 @@ struct WorkHistoryView: View {
         canRecordTask
     }
 
-    private var hasCaptureDraft: Bool {
-        hasEditedCapture && TaskCaptureDraft(company: cardCompany, jobTitle: cardJobTitle, task: cardTask, isEnteringNewCompany: isEnteringNewCompany).hasContent
-    }
+    /// At compact width and standard text sizes the title leads the navigation bar, level with Task
+    /// actions, as in the Resume Wizard. iPad keeps the large title, because its bar shares a row with
+    /// the tab bar, and so do accessibility text sizes.
+    private var showsInlineTitle: Bool { horizontalSizeClass == .compact && !dynamicTypeSize.isAccessibilitySize }
 
     private var hasTaskFilters: Bool {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedCompany != "All companies"
@@ -1073,21 +1221,11 @@ struct WorkHistoryView: View {
         .frame(maxWidth: .infinity)
         .safeAreaPadding(.bottom, 16)
         .navigationTitle("Tasks")
+        // On iPhone the title sits in the bar beside Task actions (see the toolbar below) rather than in a large-title row.
+        .toolbarTitleDisplayMode(showsInlineTitle ? .inline : .large)
         .scrollContentBackground(.hidden)
         .background(CVeeColors.page)
-        .alert("Delete task?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
-            Button("Delete task", role: .destructive) {
-                guard let pendingDelete else { return }
-                modelContext.delete(pendingDelete)
-                do { try modelContext.save() }
-                catch { modelContext.rollback(); deleteError = error.localizedDescription }
-                self.pendingDelete = nil
-            }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-        } message: { Text("This removes the task from your work library. Saved resume content is retained.") }
-        .alert("Couldn’t delete task", isPresented: Binding(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })) {
-            Button("OK", role: .cancel) { }
-        } message: { Text(deleteError ?? "Try again.") }
+        .background { taskAlerts }
         .task { restoreCardOrSeed() }
         .task(id: celebrationID) {
             // Leaving the tab cancels the sleep; the cheer still ends unless a newer one started.
@@ -1097,19 +1235,23 @@ struct WorkHistoryView: View {
         }
         .onChange(of: experiences.count) { _, _ in restoreCardOrSeed() }
         .toolbar {
+            if showsInlineTitle {
+                LeadingBarTitle(title: "Tasks")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Add manually") { showingAddTask = true }
+                    Button {
+                        showingAddTask = true
+                    } label: {
+                        Label("Add manually", systemImage: "square.and.pencil")
+                    }
+                    .accessibilityIdentifier("tasks.add-manually")
                     Button {
                         showingImport = true
                     } label: {
                         Label("Import tasks", systemImage: "arrow.down.document")
                     }
                     .accessibilityIdentifier("tasks.import")
-                    if hasCaptureDraft {
-                        Button("Discard draft", role: .destructive) { showingDiscardDraftAlert = true }
-                            .accessibilityIdentifier("tasks.discard-draft")
-                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -1118,17 +1260,40 @@ struct WorkHistoryView: View {
                 .accessibilityIdentifier("tasks.actions")
             }
         }
-        .sheet(isPresented: $showingRecordConfirmation) { recordTaskConfirmation }
-        .alert("Discard unfinished draft?", isPresented: $showingDiscardDraftAlert) {
-            Button("Discard", role: .destructive) { discardCaptureDraft() }
-                .accessibilityIdentifier("tasks.discard-draft-confirm")
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("The task details you entered will be removed.")
+        // A nested AI review closes with the record sheet, so it doesn't reopen with the next one.
+        .sheet(isPresented: $showingRecordConfirmation, onDismiss: { showingTaskEnhancementReview = false }) {
+            recordTaskConfirmation
         }
         .sheet(item: $selected) { experience in TaskDetailView(experience: experience) }
         .sheet(isPresented: $showingAddTask) { WorkExperienceEditor(experience: WorkExperience(jobTitle: "", company: "")) }
         .sheet(isPresented: $showingImport) { TaskImportView() }
+        .onReceive(NotificationCenter.default.publisher(for: .cveeOpenAIProvider)) { _ in
+            // Leaving for Profile › AI Provider closes this tab's sheets; the quick capture draft stays.
+            showingRecordConfirmation = false
+            showingAddTask = false
+            showingImport = false
+            selected = nil
+        }
+    }
+
+    /// The Tasks confirmations hang off a clear background with an ink tint, as the wizard's do, so
+    /// Cancel reads in black (white in dark appearance) rather than in the accent.
+    private var taskAlerts: some View {
+        Color.clear
+            .alert("Delete task?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
+                Button("Delete task", role: .destructive) {
+                    guard let pendingDelete else { return }
+                    modelContext.delete(pendingDelete)
+                    do { try modelContext.save() }
+                    catch { modelContext.rollback(); deleteError = error.localizedDescription }
+                    self.pendingDelete = nil
+                }
+                Button("Cancel", role: .cancel) { pendingDelete = nil }
+            } message: { Text("This removes the task from your work library. Saved resume content is retained.") }
+            .alert("Couldn’t delete task", isPresented: Binding(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })) {
+                Button("OK", role: .cancel) { }
+            } message: { Text(deleteError ?? "Try again.") }
+            .tint(CVeeColors.ink)
     }
 
     /// Quick capture starts as one action card; tapping it opens the recorder and focuses the
@@ -1197,7 +1362,6 @@ struct WorkHistoryView: View {
 
                     Button("Record task") {
                         focusedCaptureField = nil
-                        recordSheetDetent = .medium
                         focusedRecordField = nil
                         showingRecordConfirmation = true
                     }
@@ -1296,7 +1460,6 @@ struct WorkHistoryView: View {
                             cardCompany = ""
                             hasEditedCapture = true
                             saveCardDraft()
-                            recordSheetDetent = .large
                         }
                     } label: {
                         Label(cardCompany.isEmpty ? "Choose company" : cardCompany, systemImage: "building.2")
@@ -1330,23 +1493,22 @@ struct WorkHistoryView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 Divider()
-                Button("Confirm recording") {
+                Button {
                     focusedRecordField = nil
                     recordTask()
+                } label: {
+                    Text("Confirm recording").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(CoralButtonStyle())
-                .frame(maxWidth: .infinity)
                 .disabled(!canConfirmRecording || showingTaskEnhancementReview)
+                .accessibilityIdentifier("tasks.confirm-recording")
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
             .background(.bar)
         }
-        .presentationDetents([.medium, .large], selection: $recordSheetDetent)
-        .presentationDragIndicator(.visible)
-        .onChange(of: focusedRecordField) { _, field in
-            if field != nil { recordSheetDetent = .large }
-        }
+        // Full height from the start, so the details, role and company all show without a drag.
+        .presentationDetents([.large])
         .onChange(of: isEnteringNewCompany) { _, isEntering in
             if isEntering { focusedRecordField = .company }
         }
@@ -1414,17 +1576,6 @@ struct WorkHistoryView: View {
         let draft = TaskCaptureDraft(company: cardCompany, jobTitle: cardJobTitle, task: cardTask, isEnteringNewCompany: isEnteringNewCompany)
         if draft.hasContent { TaskCaptureDraftStore.save(draft) }
         else { TaskCaptureDraftStore.clear() }
-    }
-
-    private func discardCaptureDraft() {
-        TaskCaptureDraftStore.clear()
-        cardCompany = ""
-        cardJobTitle = ""
-        cardTask = ""
-        isEnteringNewCompany = false
-        hasEditedCapture = false
-        didSeedCard = false
-        restoreCardOrSeed()
     }
 
     private func recordTask() {
@@ -1499,10 +1650,12 @@ struct TaskDetailView: View {
                             .textSelection(.enabled)
                     }
                 } header: {
-                    HStack {
-                        Text("Task details")
-                        Spacer()
-                        if isEditing {
+                    // Reading, the sheet's "Task Details" title already names this section, so the
+                    // header only appears while editing, where it holds Enhance with AI.
+                    if isEditing {
+                        HStack {
+                            Text("Task details")
+                            Spacer()
                             Button {
                                 showingTaskEnhancementReview = true
                             } label: {
@@ -1529,16 +1682,18 @@ struct TaskDetailView: View {
                 }
                 Section {
                     if isEditing {
-                        Button("Save changes") {
+                        Button {
                             experience.jobTitle = title
                             experience.company = company
                             experience.tasksText = tasks
                             do { try modelContext.save(); isEditing = false }
                             catch { saveError = error.localizedDescription }
+                        } label: {
+                            Text("Save changes").frame(maxWidth: .infinity)
                         }
                         .buttonStyle(CoralButtonStyle())
-                        .frame(maxWidth: .infinity)
                         .disabled(showingTaskEnhancementReview)
+                        .accessibilityIdentifier("task.detail.save")
                     } else {
                         Button("Edit") { isEditing = true }
                             .frame(maxWidth: .infinity)
@@ -1566,19 +1721,7 @@ struct TaskDetailView: View {
                     }
                 }
             }
-            .alert("Confirm delete", isPresented: $showingDeleteAlert) {
-                Button("Delete", role: .destructive) {
-                    modelContext.delete(experience)
-                    do { try modelContext.save(); dismiss() }
-                    catch { modelContext.rollback(); saveError = error.localizedDescription }
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("This task will be permanently removed.")
-            }
-            .alert("Couldn’t save changes", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
-                Button("OK", role: .cancel) { saveError = nil }
-            } message: { Text(saveError ?? "Try again.") }
+            .background { detailAlerts }
             .sheet(isPresented: $showingTaskEnhancementReview) {
                 TaskEnhancementReviewView(original: tasks) { original, suggestion in
                     guard tasks == original else { return }
@@ -1587,6 +1730,26 @@ struct TaskDetailView: View {
             }
             .sheet(item: $selectedResume) { resume in ResumePreviewView(resume: resume) }
         }
+    }
+
+    /// The confirmations hang off a clear background with an ink tint, so Cancel reads in black (white
+    /// in dark appearance) rather than in the accent; Delete stays red. The message keeps to one line.
+    private var detailAlerts: some View {
+        Color.clear
+            .alert("Confirm delete", isPresented: $showingDeleteAlert) {
+                Button("Delete", role: .destructive) {
+                    modelContext.delete(experience)
+                    do { try modelContext.save(); dismiss() }
+                    catch { modelContext.rollback(); saveError = error.localizedDescription }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This can’t be undone.")
+            }
+            .alert("Couldn’t save changes", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+                Button("OK", role: .cancel) { saveError = nil }
+            } message: { Text(saveError ?? "Try again.") }
+            .tint(CVeeColors.ink)
     }
 }
 
@@ -2208,6 +2371,7 @@ extension Notification.Name { static let cveeOpenJob = Notification.Name("cvee.o
 struct WorkExperienceEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Bindable var experience: WorkExperience
     @State private var isNew = false
     @State private var jobTitle = ""
@@ -2262,16 +2426,17 @@ struct WorkExperienceEditor: View {
                     }
                 }
                 Section {
-                    Button(isNew ? "Add task" : "Save changes") {
+                    Button {
                         experience.jobTitle = jobTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                         experience.company = company.trimmingCharacters(in: .whitespacesAndNewlines)
                         experience.tasksText = task.trimmingCharacters(in: .whitespacesAndNewlines)
                         if isNew { modelContext.insert(experience) }
                         do { try modelContext.save(); dismiss() }
                         catch { saveError = error.localizedDescription }
+                    } label: {
+                        Text(isNew ? "Add task" : "Save changes").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(CoralButtonStyle())
-                    .frame(maxWidth: .infinity)
                     .disabled(showingTaskEnhancementReview)
                     .disabled(jobTitle.trimmingCharacters(in: .whitespaces).isEmpty || company.trimmingCharacters(in: .whitespaces).isEmpty)
                     .accessibilityIdentifier("task.save")
@@ -2279,8 +2444,15 @@ struct WorkExperienceEditor: View {
             }
             .modifier(WorkspaceSurface())
             .navigationTitle(isNew ? "Add task" : "Edit experience")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if isNew { modelContext.delete(experience) }; dismiss() } }
+                ToolbarItem(placement: .topBarLeading) {
+                    SheetBackButton(identifier: "task.back") { if isNew { modelContext.delete(experience) }; dismiss() }
+                }
+                // The title sits beside Back; accessibility text sizes keep the centered inline title.
+                if !dynamicTypeSize.isAccessibilitySize {
+                    LeadingBarTitle(title: isNew ? "Add task" : "Edit experience")
+                }
             }
             .alert("Couldn’t save task", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
                 Button("OK", role: .cancel) { saveError = nil }
@@ -2314,14 +2486,24 @@ struct TaskImportView: View {
         NavigationStack {
             Form {
                 Section("Workplace") { TextField("Job title", text: $jobTitle).accessibilityIdentifier("import.job-title"); TextField("Company", text: $company).accessibilityIdentifier("import.company"); DatePicker("Start date", selection: $startDate, displayedComponents: .date); Toggle("Currently working here", isOn: Binding(get: { endDate == nil }, set: { endDate = $0 ? nil : .now })); if endDate != nil { DatePicker("End date", selection: Binding($endDate)!, displayedComponents: .date) } }
-                if drafts.isEmpty { Section { Button("Choose document") { showingPicker = true }.accessibilityIdentifier("import.choose-document"); if isAnalyzing { ProgressView("Analyzing tasks…") }; if !sourceText.isEmpty && !isAnalyzing { Text("Document loaded. Choose Analyze to preview tasks.").foregroundStyle(.secondary) } } }
+                if drafts.isEmpty {
+                    Section {
+                        Button { showingPicker = true } label: {
+                            Label("Choose document", systemImage: "arrow.down.document").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(CoralButtonStyle())
+                        .accessibilityIdentifier("import.choose-document")
+                        if isAnalyzing { ProgressView("Analyzing tasks…") }
+                        if !sourceText.isEmpty && !isAnalyzing { Text("Document loaded. Choose Analyze to preview tasks.").foregroundStyle(.secondary) }
+                    }
+                }
                 if !drafts.isEmpty { Section("Preview (\(drafts.filter(\.isSelected).count) selected)") { ForEach($drafts) { $draft in HStack { Button { draft.isSelected.toggle() } label: { SelectionCircle(isSelected: draft.isSelected).frame(width: 44, height: 44) }.buttonStyle(.plain).accessibilityLabel("Include task in import").accessibilityValue(draft.isSelected ? "Selected" : "Not selected"); TextField("Task or contribution", text: $draft.text, axis: .vertical).lineLimit(2...5) } }; DisclosureGroup("Source document") { Text(sourceText).font(.caption).textSelection(.enabled) } } }
                 if !sourceText.isEmpty && drafts.isEmpty && !isAnalyzing { Section { Button("Analyze with AI") { analyze() }.disabled(isAnalyzing).accessibilityIdentifier("import.analyze") } }
                 if !drafts.isEmpty { Section { Button("Add \(drafts.filter(\.isSelected).count) tasks") { save() }.disabled(!canSave).accessibilityIdentifier("import.save") } }
             }
             .modifier(WorkspaceSurface())
             .navigationTitle("Import Tasks List").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarLeading) { SheetBackButton(identifier: "import.back") { dismiss() } } }
             .fileImporter(isPresented: $showingPicker, allowedContentTypes: [UTType.pdf, .plainText, UTType(filenameExtension: "docx")!]) { result in load(result) }
             .alert("Import failed", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) { Button("OK", role: .cancel) { errorMessage = nil } } message: { Text(errorMessage ?? "Try again.") }
         }
@@ -2598,6 +2780,11 @@ struct NewResumeView: View {
         .onChange(of: jobs.count) { _, count in if count > jobCountBeforeAdd, let newest = jobs.first, newest.isUsableForResume { selectedJobID = newest.id } }
         .sheet(isPresented: $showingAddTask) { WorkExperienceEditor(experience: WorkExperience(jobTitle: "", company: "")) }
         .sheet(isPresented: $showingImport) { TaskImportView { ids in selectedExperienceIDs.formUnion(ids) } }
+        .onReceive(NotificationCenter.default.publisher(for: .cveeOpenAIProvider)) { _ in
+            // Leaving for Profile › AI Provider closes the task sheets; the wizard keeps its selections.
+            showingAddTask = false
+            showingImport = false
+        }
         .sheet(isPresented: $showingAddJob) { AddJobView() }
         .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: [.pdf]) { result in importPDF(result) }
         .sheet(item: $reviewingJob, onDismiss: {
@@ -2619,19 +2806,10 @@ struct NewResumeView: View {
                         .accessibilityIdentifier("wizard.back")
                 }
             }
-            // The title leads the bar, right after Back, and an empty principal item replaces the centered
-            // title. The navigation title stays set, so the bar keeps its "Resume Wizard" name.
+            // The title leads the bar, right after Back. The navigation title stays set, so the bar keeps
+            // its "Resume Wizard" name.
             if showsInlineTitle {
-                ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1).accessibilityHidden(true) }
-                ToolbarItem(placement: .topBarLeading) {
-                    Text("Resume Wizard")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(CVeeColors.ink)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .accessibilityAddTraits(.isHeader)
-                }
-                .sharedBackgroundVisibility(.hidden)
+                LeadingBarTitle(title: "Resume Wizard")
             }
             ToolbarItem(placement: .topBarLeading) {
                 if focusedField != nil && errorMessage == nil {
