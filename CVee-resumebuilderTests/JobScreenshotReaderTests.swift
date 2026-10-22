@@ -42,6 +42,34 @@ final class JobScreenshotReaderTests: XCTestCase {
         XCTAssertEqual(JobScreenshotReader().read(pages: [pages[0], pages[0], pages[1], pages[2]]).text, linkedInText)
     }
 
+    func testParagraphAfterAListStaysApartWhereTwoScreenshotsMeet() {
+        var post = FakeJobPost()
+        post.line("Grab", size: 14, x: 60)
+        post.line("Senior iOS Engineer", size: 24)
+        post.line("Taguig, Philippines · 2 days ago · Over 100 applicants", size: 13)
+        post.line("About the job", size: 20, gap: 8)
+        post.paragraph("Grab is Southeast Asia's leading superapp. We are looking for a Senior iOS Engineer to help millions of people get around, order food, and pay every day.")
+        post.paragraph("What you will do:", gap: 4)
+        post.paragraph("• Build and ship features in Swift and SwiftUI for the Grab app used across eight countries.", gap: 4)
+        post.paragraph("• Work with designers and product managers to plan, test, and release new experiences.", gap: 4)
+        post.paragraph("• Review code and mentor engineers on testing, performance, and accessibility.")
+        post.paragraph("Requirements", gap: 4)
+        post.paragraph("• 5+ years of experience building iOS apps in Swift.", gap: 4)
+        post.paragraph("• Strong knowledge of UIKit, SwiftUI, and concurrency.")
+        post.paragraph("We offer flexible hybrid work, health coverage for you and your family, and a yearly learning budget.")
+        post.paragraph("What we offer:", gap: 4)
+        post.paragraph("• Flexible hybrid work from our Taguig office.", gap: 4)
+        // The first screenshot ends on this item, which fills the line, so only the space below it ends the list.
+        post.paragraph("• Health coverage for you and your family, too.")
+        post.paragraph("Apply with your resume and two apps you are proud of.")
+        post.line("Show less", gap: 18)
+        post.line("About the company", size: 20, gap: 8)
+        post.line("Grab", gap: 2)
+        post.line("1,234,567 followers", size: 13)
+        let text = JobScreenshotReader().read(pages: post.screenshots(scrolledTo: [0, 400])).text
+        XCTAssertTrue(text.hasSuffix("• Health coverage for you and your family, too.\n\nApply with your resume and two apps you are proud of."), text)
+    }
+
     func testCollapsedLinkedInDescriptionIsFlaggedAsCutShort() {
         let result = JobScreenshotReader().read(pages: FakeJobPost.linkedIn(collapsed: true).screenshots(scrolledTo: [0, 400]))
         XCTAssertTrue(result.isTruncated)

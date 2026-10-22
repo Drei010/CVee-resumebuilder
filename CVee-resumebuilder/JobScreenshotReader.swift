@@ -62,13 +62,17 @@ private struct Row {
     let frame: CGRect
     let key: String
     var startsParagraph: Bool
+    /// For the first row taken from a screenshot that continues another: the space above it in its own screenshot,
+    /// where the row above is the last one the two share. Rows from different screenshots can't be measured against each other.
+    var seamGap: CGFloat?
 
-    init?(parts lines: [ScreenshotTextLine], page: Int, startsParagraph: Bool = false) {
+    init?(parts lines: [ScreenshotTextLine], page: Int, startsParagraph: Bool = false, seamGap: CGFloat? = nil) {
         let parts = lines.filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }.sorted { $0.frame.minX < $1.frame.minX }
         guard let first = parts.first else { return nil }
         self.parts = parts
         self.page = page
         self.startsParagraph = startsParagraph
+        self.seamGap = seamGap
         text = parts.map { $0.text.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
         frame = parts.dropFirst().reduce(first.frame) { $0.union($1.frame) }
         key = JobScreenshotReader.key(text)
@@ -77,7 +81,7 @@ private struct Row {
 
     /// The same row with its text replaced, for trimming LinkedIn's inline "…more".
     func replacingText(_ text: String) -> Row? {
-        Row(parts: [ScreenshotTextLine(text: text, frame: frame)], page: page, startsParagraph: startsParagraph)
+        Row(parts: [ScreenshotTextLine(text: text, frame: frame)], page: page, startsParagraph: startsParagraph, seamGap: seamGap)
     }
 }
 
@@ -151,7 +155,9 @@ private extension JobScreenshotReader {
         guard var merged = screens.first else { return [] }
         for screen in screens.dropFirst() {
             if let link = overlap(merged, screen, isFiller: isFiller) {
-                merged = Array(merged[..<link.keepFirst]) + screen[link.skipSecond...]
+                var rest = Array(screen[link.skipSecond...])
+                if link.skipSecond > 0, !rest.isEmpty { rest[0].seamGap = rest[0].frame.minY - screen[link.skipSecond - 1].frame.maxY }
+                merged = Array(merged[..<link.keepFirst]) + rest
             } else if var first = screen.first {
                 // No shared lines, so a few may be missing between these screenshots: start a new paragraph.
                 first.startsParagraph = true
@@ -215,7 +221,8 @@ private extension JobScreenshotReader {
             let charWidth = previous.frame.width / CGFloat(max(previous.text.count, 1))
             let nextWord = CGFloat((row.text.split(separator: " ").first?.count ?? 0) + 1)
             let endsShort = right - previous.frame.maxX > charWidth * nextWord * 1.2 + width * 0.03
-            let blankLine = row.page == previous.page && row.frame.minY - previous.frame.maxY > lineHeight * 0.9
+            let gap: CGFloat? = row.page == previous.page ? row.frame.minY - previous.frame.maxY : row.seamGap
+            let blankLine = (gap ?? 0) > lineHeight * 0.9
             if row.startsParagraph || Self.isListItem(row.text) || previous.text.hasSuffix(":") || blankLine || endsShort {
                 paragraphs.append(current)
                 current = row.text
@@ -355,7 +362,7 @@ private enum LinkedInVocabulary {
 
     /// The row without LinkedIn's buttons and badges, or nil when nothing else is on it.
     static func content(of row: Row) -> Row? {
-        Row(parts: row.parts.filter { !isControl(JobScreenshotReader.key($0.text), at: row.frame.midY) }, page: row.page, startsParagraph: row.startsParagraph)
+        Row(parts: row.parts.filter { !isControl(JobScreenshotReader.key($0.text), at: row.frame.midY) }, page: row.page, startsParagraph: row.startsParagraph, seamGap: row.seamGap)
     }
 
     /// The display names of the chips when a row holds only chips, such as ["On-site", "Full-time"].
