@@ -7,6 +7,7 @@ final class ShareViewController: UIViewController {
     private let saveButton = UIButton(type: .system)
     private let status = UILabel()
     private var items: [SharedItem] = []
+    private var loadedItems: [Int: SharedItem] = [:]
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -41,12 +42,14 @@ final class ShareViewController: UIViewController {
         guard !providers.isEmpty else { status.text = "Nothing was shared."; return }
         let group = DispatchGroup()
         let lock = NSLock()
-        for provider in providers {
+        // Items finish loading in any order; keep the order they were shared in, since CVee reads screenshots in sequence.
+        for (index, provider) in providers.enumerated() {
             group.enter()
-            load(provider) { item in lock.lock(); if let item { self.items.append(item) }; lock.unlock(); group.leave() }
+            load(provider) { item in lock.lock(); self.loadedItems[index] = item; lock.unlock(); group.leave() }
         }
         group.notify(queue: .main) { [weak self] in
             guard let self else { return }
+            self.items = self.loadedItems.keys.sorted().compactMap { self.loadedItems[$0] }
             self.preview.text = self.items.map { $0.text ?? $0.url ?? $0.filename }.joined(separator: "\n\n")
             self.status.text = self.items.contains(where: { !$0.attachments.isEmpty }) ? "Attachment ready. Saved locally before this extension closes." : "Ready to save to the CVee inbox."
         }
@@ -66,7 +69,9 @@ final class ShareViewController: UIViewController {
         guard let type else { completion(nil); return }
         provider.loadDataRepresentation(forTypeIdentifier: type) { data, _ in
             guard let data else { completion(nil); return }
-            let filename = provider.suggestedName ?? "shared-attachment"
+            // CVee recognizes screenshots by their file extension, which a suggested name often leaves out.
+            var filename = provider.suggestedName ?? (UTType(type)?.conforms(to: .image) == true ? "Screenshot" : "shared-attachment")
+            if (filename as NSString).pathExtension.isEmpty, let fileExtension = UTType(type)?.preferredFilenameExtension { filename += ".\(fileExtension)" }
             completion(SharedItem(filename: filename, contentType: type, data: data))
         }
     }
@@ -112,11 +117,19 @@ private struct ShareInboxWriter {
         let sourceURL = items.compactMap(\.url).first
         var attachments: [[String: String]] = []
         var attachmentBytes = 0
+        var usedNames: Set<String> = []
         for item in items.flatMap(\.attachments) {
             guard let data = item.data else { throw CocoaError(.fileNoSuchFile) }
             attachmentBytes += data.count
             guard attachmentBytes <= 10_000_000 else { throw CocoaError(.fileWriteOutOfSpace) }
-            let filename = item.filename.replacingOccurrences(of: "/", with: "-")
+            var filename = item.filename.replacingOccurrences(of: "/", with: "-")
+            // Several screenshots can share a name; number the repeats so none overwrites another.
+            if usedNames.contains(filename.lowercased()) {
+                let name = filename as NSString
+                let numbered = "\(name.deletingPathExtension) \(attachments.count + 1)"
+                filename = name.pathExtension.isEmpty ? numbered : "\(numbered).\(name.pathExtension)"
+            }
+            usedNames.insert(filename.lowercased())
             try data.write(to: staging.appendingPathComponent(filename), options: .atomic)
             attachments.append(["filename": item.filename, "relativePath": filename, "contentType": item.contentType])
         }

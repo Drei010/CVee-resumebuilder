@@ -3,7 +3,6 @@ import PDFKit
 import SwiftData
 import UIKit
 import UniformTypeIdentifiers
-import Vision
 
 enum JobCaptureReviewState: String, Codable {
     case reviewed
@@ -207,7 +206,8 @@ struct JobCaptureStore {
         var imported = 0
         for package in packages() where !existing.contains(where: { $0.captureID == package.id }) {
             let refs = try copyAttachments(from: package)
-            let sourceType: JobTargetSource = package.attachments.contains(where: { $0.contentType.lowercased().contains("image") || ["png", "jpg", "jpeg"].contains($0.contentType.lowercased()) }) ? .screenshot : .shareExtension
+            // The share extension stores a type identifier, such as public.png, which names no "image"; older captures stored a MIME type or file extension.
+            let sourceType: JobTargetSource = package.attachments.contains(where: { $0.contentType.lowercased().contains("image") || (UTType($0.contentType) ?? UTType(filenameExtension: $0.contentType))?.conforms(to: .image) == true }) ? .screenshot : .shareExtension
             let job = JobTarget(sourceType: sourceType, rawText: package.text ?? "", parsedTitle: package.title, parsedCompany: package.company, sourceURL: package.sourceURL, captureID: package.id, attachmentReferencesData: try? JSONEncoder().encode(refs), captureReviewState: .needsReview)
             context.insert(job)
             do { try context.save() } catch { context.delete(job); throw error }
@@ -258,8 +258,20 @@ enum TaskCaptureDraftStore {
     static func clear() { UserDefaults.standard.removeObject(forKey: key) }
 }
 
+/// What a job capture read from its files: the description, plus the title and company when the page shows them.
+struct JobCaptureExtraction: Equatable {
+    var text: String
+    var title: String?
+    var company: String?
+    var isLinkedIn = false
+    /// LinkedIn's "Show more" was still on screen, so the description stops early.
+    var isTruncated = false
+
+    static let truncatedNote = "This stops at LinkedIn’s Show more, so the rest of the description is missing. Tap Show more in LinkedIn, then take the screenshots again."
+}
+
 struct JobCaptureExtractor {
-    func extract(urls: [URL]) async throws -> String {
+    func extract(urls: [URL]) async throws -> JobCaptureExtraction {
         guard !urls.isEmpty else { throw JobCaptureError.empty }
         let images = urls.filter { ["png", "jpg", "jpeg", "heic", "tiff"].contains($0.pathExtension.lowercased()) }
         if images.count > JobCaptureLimits.maxImages || (images.isEmpty == false && images.count != urls.count) { throw JobCaptureError.tooManyImages }
@@ -267,20 +279,40 @@ struct JobCaptureExtractor {
         let totalBytes = try urls.reduce(0) { total, url in total + ((try url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
         guard totalBytes <= JobCaptureLimits.maxBytes else { throw JobCaptureError.tooLarge }
 
+        if !images.isEmpty {
+            var screenshots: [[ScreenshotTextLine]] = []
+            for url in urls {
+                try Task.checkCancellation()
+                guard let image = UIImage(contentsOfFile: url.path)?.cgImage else { throw JobCaptureError.unreadable("The image could not be opened.") }
+                screenshots.append(try await JobScreenshotReader.lines(in: image))
+            }
+            var extraction = JobScreenshotReader().read(pages: screenshots)
+            try check(extraction.text)
+            if !extraction.isLinkedIn {
+                let suggested = suggestions(from: extraction.text)
+                extraction.title = suggested.title
+                extraction.company = suggested.company
+            }
+            return extraction
+        }
+
         var pages: [String] = []
         for url in urls {
-            if images.contains(url) {
-                pages.append(try await recognizeText(in: url))
-            } else if url.pathExtension.lowercased() == "pdf" {
+            if url.pathExtension.lowercased() == "pdf" {
                 pages.append(contentsOf: try await extractPDF(url))
             } else {
                 pages.append(try TaskDocumentReader().read(url))
             }
         }
         let result = pages.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: "\n\n")
-        guard !result.isEmpty else { throw JobCaptureError.empty }
-        guard result.count <= JobCaptureLimits.maxCharacters else { throw JobCaptureError.tooMuchText }
-        return result
+        try check(result)
+        let suggested = suggestions(from: result)
+        return JobCaptureExtraction(text: result, title: suggested.title, company: suggested.company)
+    }
+
+    private func check(_ text: String) throws {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw JobCaptureError.empty }
+        guard text.count <= JobCaptureLimits.maxCharacters else { throw JobCaptureError.tooMuchText }
     }
 
     func suggestions(from text: String) -> (title: String?, company: String?) {
@@ -303,31 +335,9 @@ struct JobCaptureExtractor {
         return pages
     }
 
-    private func recognizeText(in url: URL) async throws -> String {
-        guard let image = UIImage(contentsOfFile: url.path)?.cgImage else { throw JobCaptureError.unreadable("The image could not be opened.") }
-        return try await recognizeText(in: image)
-    }
-
     private func recognizeText(in page: PDFPage?) async throws -> String {
         guard let page, let image = page.thumbnail(of: CGSize(width: 1800, height: 2400), for: .mediaBox).cgImage else { throw JobCaptureError.unreadable("The PDF page could not be rendered.") }
-        return try await recognizeText(in: image)
-    }
-
-    private func recognizeText(in image: CGImage) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let request = VNRecognizeTextRequest { request, error in
-                    if let error { continuation.resume(throwing: error); return }
-                    let text = (request.results as? [VNRecognizedTextObservation] ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
-                    continuation.resume(returning: text)
-                }
-                request.recognitionLevel = .accurate
-                request.recognitionLanguages = ["en-US"]
-                request.usesLanguageCorrection = true
-                do { try VNImageRequestHandler(cgImage: image, options: [:]).perform([request]) }
-                catch { continuation.resume(throwing: error) }
-            }
-        }
+        return try await JobScreenshotReader.lines(in: image).map(\.text).joined(separator: "\n")
     }
 }
 

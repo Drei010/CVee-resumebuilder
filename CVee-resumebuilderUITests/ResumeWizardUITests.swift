@@ -682,6 +682,26 @@ final class ResumeWizardUITests: XCTestCase {
         capture(app, "saved-jobs-search-no-match")
     }
 
+    func testAddJobScreenshotsOfferPhotosAndFiles() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+        selectTab("Saved Jobs", in: app)
+        let add = app.buttons["Add saved job"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: timeout))
+        add.tap()
+        let screenshots = app.buttons["Import screenshots"]
+        XCTAssertTrue(screenshots.waitForExistence(timeout: timeout))
+        let tip = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Show more under About the job'")).firstMatch
+        XCTAssertFalse(tip.exists, "Only screenshot capture explains how to take LinkedIn screenshots")
+        screenshots.tap()
+        // Screenshots come from Photos, in the order they're picked, or from Files, with a tip on taking them in LinkedIn.
+        XCTAssertTrue(app.buttons["Choose from Photos"].waitForExistence(timeout: timeout))
+        XCTAssertTrue(app.buttons["Choose from Files"].exists)
+        XCTAssertTrue(tip.waitForExistence(timeout: timeout))
+        capture(app, "add-job-screenshots")
+    }
+
     func testSavedJobsFiltersByCompanyAndStatus() {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-resume-format-fixture"]

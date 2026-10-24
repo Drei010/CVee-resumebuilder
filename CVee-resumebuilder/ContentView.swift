@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import UIKit
 import PDFKit
+import PhotosUI
 import UniformTypeIdentifiers
 
 // THESIS: CVee's reusable experience library in the supplied Asana list language.
@@ -2022,6 +2023,7 @@ struct JobDetailView: View {
     @State private var fetchedDescription: String?
     @State private var isFetching = false
     @State private var isExtracting = false
+    @State private var extractionNote: String?
     let onOpenTasks: () -> Void
 
     init(job: JobTarget, onOpenTasks: @escaping () -> Void = {}) {
@@ -2050,6 +2052,7 @@ struct JobDetailView: View {
                         TextEditor(text: $description)
                             .frame(minHeight: 220)
                             .accessibilityLabel("Job description")
+                        if let extractionNote { Label(extractionNote, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(CVeeColors.secondary) }
                     } else {
                         LabeledContent("Job", value: job.parsedTitle ?? "Untitled job")
                         LabeledContent("Company", value: job.displayCompany)
@@ -2117,7 +2120,7 @@ struct JobDetailView: View {
                             job.rawText = description
                             job.sourceURL = sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : sourceURL.trimmingCharacters(in: .whitespacesAndNewlines)
                             job.captureReviewState = job.hasDescription ? .reviewed : .needsReview
-                            do { try modelContext.save(); isEditing = false }
+                            do { try modelContext.save(); isEditing = false; extractionNote = nil }
                             catch { saveError = error.localizedDescription }
                         }
                         .buttonStyle(CoralButtonStyle())
@@ -2141,6 +2144,7 @@ struct JobDetailView: View {
                             company = job.parsedCompany ?? ""
                             sourceURL = job.sourceURL ?? job.linkedInURL ?? ""
                             description = job.rawText
+                            extractionNote = nil
                             isEditing = false
                         } else { dismiss() }
                     }
@@ -2203,8 +2207,15 @@ struct JobDetailView: View {
         isExtracting = true
         Task {
             do {
-                let text = try await JobCaptureExtractor().extract(urls: urls)
-                await MainActor.run { description = text; isEditing = true; isExtracting = false }
+                let extraction = try await JobCaptureExtractor().extract(urls: urls)
+                await MainActor.run {
+                    description = extraction.text
+                    if name.isEmpty { name = extraction.title ?? "" }
+                    if company.isEmpty { company = extraction.company ?? "" }
+                    extractionNote = extraction.isTruncated ? JobCaptureExtraction.truncatedNote : nil
+                    isEditing = true
+                    isExtracting = false
+                }
             } catch {
                 await MainActor.run { saveError = error.localizedDescription; isExtracting = false }
             }
@@ -2224,6 +2235,8 @@ struct AddJobView: View {
     @State private var showingDuplicatePrompt = false
     @State private var duplicateJob: JobTarget?
     @State private var saveError: String?
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var captureNote: String?
 
     private enum CaptureMode: String, CaseIterable, Identifiable { case paste = "Paste text or link", document = "Import document", screenshots = "Import screenshots"; var id: String { rawValue } }
     private var canSave: Bool { draft.hasContent && !isProcessing }
@@ -2231,19 +2244,7 @@ struct AddJobView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Capture") {
-                    Picker("Capture method", selection: $mode) { ForEach(CaptureMode.allCases) { Text($0.rawValue).tag($0) } }
-                        .pickerStyle(.segmented)
-                    switch mode {
-                    case .paste:
-                        Button { paste() } label: { Label("Paste from clipboard", systemImage: "doc.on.clipboard") }
-                    case .document:
-                        Button { showingDocumentPicker = true } label: { Label("Choose PDF, DOCX, or TXT", systemImage: "doc.badge.plus") }
-                    case .screenshots:
-                        Button { showingImagePicker = true } label: { Label("Choose screenshots", systemImage: "photo.on.rectangle.angled") }
-                    }
-                    if isProcessing { ProgressView("Extracting locally…") }
-                }
+                captureSection
                 Section("Job details") {
                     TextField("Job title (optional)", text: $draft.title)
                     TextField("Company (optional)", text: $draft.company)
@@ -2257,6 +2258,7 @@ struct AddJobView: View {
                             if draft.description.isEmpty { Text("Description or a valid URL is enough to save") .foregroundStyle(.secondary).padding(.top, 8).allowsHitTesting(false) }
                         }
                     if !draft.originalSource.isEmpty { Label("Original source: \(draft.originalSource)", systemImage: "paperclip").font(.caption).foregroundStyle(.secondary) }
+                    if let captureNote { Label(captureNote, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(CVeeColors.secondary) }
                     if draft.reviewState == .needsReview {
                         Label("Needs review", systemImage: "exclamationmark.circle").foregroundStyle(.orange)
                         Button("Mark description reviewed") { draft.reviewState = .reviewed }.disabled(draft.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -2307,6 +2309,34 @@ struct AddJobView: View {
     @State private var showingDocumentPicker = false
     @State private var showingImagePicker = false
 
+    /// Kept out of `body`: with this section inline, Xcode 26.6 gives up type-checking `body` ("unable to type-check this expression in reasonable time").
+    private var captureSection: some View {
+        Section {
+            Picker("Capture method", selection: $mode) { ForEach(CaptureMode.allCases) { Text($0.rawValue).tag($0) } }
+                .pickerStyle(.segmented)
+            switch mode {
+            case .paste:
+                Button { paste() } label: { Label("Paste from clipboard", systemImage: "doc.on.clipboard") }
+            case .document:
+                Button { showingDocumentPicker = true } label: { Label("Choose PDF, DOCX, or TXT", systemImage: "doc.badge.plus") }
+            case .screenshots:
+                PhotosPicker(selection: $photoItems, maxSelectionCount: JobCaptureLimits.maxImages, selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current) {
+                    Label("Choose from Photos", systemImage: "photo.on.rectangle.angled")
+                }
+                .accessibilityHint("Pick up to 10 screenshots in the order you took them")
+                Button { showingImagePicker = true } label: { Label("Choose from Files", systemImage: "folder") }
+            }
+            if isProcessing { ProgressView("Extracting locally…") }
+        } header: {
+            Text("Capture")
+        } footer: {
+            if mode == .screenshots {
+                Text("On LinkedIn, tap Show more under About the job, then take screenshots as you scroll, each overlapping the last by a few lines. CVee joins them in order and leaves out LinkedIn’s buttons.")
+            }
+        }
+        .onChange(of: photoItems) { _, items in importPhotos(items) }
+    }
+
     private func paste() {
         let pasted = UIPasteboard.general.string ?? ""
         if let url = URL(string: pasted.trimmingCharacters(in: .whitespacesAndNewlines)), url.isHTTPURL, draft.description.isEmpty { draft.sourceURL = pasted.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -2319,32 +2349,56 @@ struct AddJobView: View {
         Task {
             do {
                 let urls = try result.get()
-                guard !urls.isEmpty else { throw JobCaptureError.empty }
-                let captureID = draft.captureID ?? UUID()
-                draft.captureID = captureID
-                draft.sourceType = isImage ? .screenshot : .document
-                draft.originalSource = urls.map(\.lastPathComponent).joined(separator: ", ")
-                JobCaptureDraftStore.save(draft)
                 let scoped = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
                 defer { scoped.forEach { if $0.1 { $0.0.stopAccessingSecurityScopedResource() } } }
-                let text = try await JobCaptureExtractor().extract(urls: urls)
-                let refs = try JobCaptureStore().copyAttachments(from: urls, for: captureID)
-                let suggestions = JobCaptureExtractor().suggestions(from: text)
-                await MainActor.run {
-                    draft.captureID = captureID
-                    draft.sourceType = isImage ? .screenshot : .document
-                    draft.description = text
-                    draft.originalSource = urls.map(\.lastPathComponent).joined(separator: ", ")
-                    draft.attachments = refs
-                    draft.reviewState = .needsReview
-                    if draft.title.isEmpty { draft.title = suggestions.title ?? "" }
-                    if draft.company.isEmpty { draft.company = suggestions.company ?? "" }
-                    isProcessing = false
-                }
+                try await capture(urls, isImage: isImage, source: urls.map(\.lastPathComponent).joined(separator: ", "))
             } catch {
-                await MainActor.run { saveError = error.localizedDescription; isProcessing = false }
+                saveError = error.localizedDescription
             }
+            isProcessing = false
         }
+    }
+
+    /// Saves the screenshots picked in Photos to temporary files, in the order they were picked, then reads them like files.
+    private func importPhotos(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        photoItems = []
+        isProcessing = true
+        Task {
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("job-screenshots-\(UUID().uuidString)", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                var urls: [URL] = []
+                for (index, item) in items.enumerated() {
+                    guard let data = try await item.loadTransferable(type: Data.self) else { throw JobCaptureError.unreadable("A screenshot could not be loaded from Photos.") }
+                    let fileExtension = item.supportedContentTypes.first(where: { $0.conforms(to: .image) })?.preferredFilenameExtension ?? "png"
+                    let url = folder.appendingPathComponent("Screenshot \(index + 1).\(fileExtension)")
+                    try data.write(to: url, options: .atomic)
+                    urls.append(url)
+                }
+                try await capture(urls, isImage: true, source: urls.count == 1 ? "1 screenshot from Photos" : "\(urls.count) screenshots from Photos")
+            } catch {
+                saveError = error.localizedDescription
+            }
+            try? FileManager.default.removeItem(at: folder)
+            isProcessing = false
+        }
+    }
+
+    private func capture(_ urls: [URL], isImage: Bool, source: String) async throws {
+        guard !urls.isEmpty else { throw JobCaptureError.empty }
+        let captureID = draft.captureID ?? UUID()
+        draft.captureID = captureID
+        draft.sourceType = isImage ? .screenshot : .document
+        draft.originalSource = source
+        JobCaptureDraftStore.save(draft)
+        let extraction = try await JobCaptureExtractor().extract(urls: urls)
+        draft.attachments = try JobCaptureStore().copyAttachments(from: urls, for: captureID)
+        draft.description = extraction.text
+        draft.reviewState = .needsReview
+        if draft.title.isEmpty { draft.title = extraction.title ?? "" }
+        if draft.company.isEmpty { draft.company = extraction.company ?? "" }
+        captureNote = extraction.isTruncated ? JobCaptureExtraction.truncatedNote : nil
     }
 
     private func save() {
