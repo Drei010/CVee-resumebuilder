@@ -2,3 +2,4 @@
 TestResults.xcresult/
 TestResults-*.xcresult/
 ci-diagnostics/
+.tools/
