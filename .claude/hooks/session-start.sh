@@ -5,7 +5,7 @@
 # `swiftlint lint --config .swiftlint.yml --strict` step.
 set -euo pipefail
 
-if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
+if [[ "${CLAUDE_CODE_REMOTE:-}" != "true" ]]; then
   exit 0
 fi
 
@@ -21,7 +21,7 @@ if ! sha256sum --check --status "$hashes" 2>/dev/null; then
   rm -rf "$TOOLS_DIR"
   mkdir -p "$TOOLS_DIR/bin"
   zip="$TOOLS_DIR/swiftlint.zip"
-  curl -fsSL -o "$zip" \
+  curl -fsSL --proto "=https" --tlsv1.2 -o "$zip" \
     "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux_amd64.zip"
   echo "${SWIFTLINT_SHA256}  ${zip}" | sha256sum --check --status
   # The static build needs no Swift runtime on the machine
@@ -32,6 +32,6 @@ if ! sha256sum --check --status "$hashes" 2>/dev/null; then
   sha256sum .claude/hooks/session-start.sh > "$hashes"
 fi
 
-if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
   echo "export PATH=\"$TOOLS_DIR/bin:\$PATH\"" >> "$CLAUDE_ENV_FILE"
 fi
