@@ -467,7 +467,8 @@ struct TaskDocumentReader {
 
 private final class XMLTextParser: NSObject, XMLParserDelegate {
     var text = ""; private var inText = false
-    func parse(_ data: Data) { let parser = XMLParser(data: data); parser.delegate = self; parser.parse() }
+    // Word tags text as w:t and paragraphs as w:p; with namespaces on, the parser reports them as t and p.
+    func parse(_ data: Data) { let parser = XMLParser(data: data); parser.shouldProcessNamespaces = true; parser.delegate = self; parser.parse() }
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) { inText = elementName == "t"; if elementName == "p" && !text.isEmpty { text += "\n" } }
     func parser(_ parser: XMLParser, foundCharacters string: String) { if inText { text += string } }
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) { if elementName == "t" { inText = false } }

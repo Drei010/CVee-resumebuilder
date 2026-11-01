@@ -1757,6 +1757,7 @@ struct TaskDetailView: View {
 struct SavedJobsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \JobTarget.createdAt, order: .reverse) private var jobs: [JobTarget]
+    @Query private var resumes: [Resume]
     @State private var searchText = ""
     @State private var selectedCompany = "All companies"
     @State private var selectedStatus = "All statuses"
@@ -1997,6 +1998,8 @@ struct SavedJobsView: View {
 
     private func deleteConfirmedJobs() {
         let deleted = pendingDeletion
+        // Resume.jobTarget has no inverse, so clear it first or the resume keeps a link to a deleted job.
+        for job in deleted { resumes.filter { $0.jobTarget?.id == job.id }.forEach { $0.jobTarget = nil } }
         deleted.forEach(modelContext.delete)
         do {
             try modelContext.save()
@@ -2152,6 +2155,8 @@ struct JobDetailView: View {
             }
             .alert("Confirm delete", isPresented: $showingDeleteAlert) {
                 Button("Delete", role: .destructive) {
+                    // Resume.jobTarget has no inverse, so clear it first or the resume keeps a link to a deleted job.
+                    linkedResumes.forEach { $0.jobTarget = nil }
                     modelContext.delete(job)
                     do { try modelContext.save(); JobCaptureStore().removeAttachments(for: job); dismiss() }
                     catch { modelContext.rollback(); saveError = error.localizedDescription }

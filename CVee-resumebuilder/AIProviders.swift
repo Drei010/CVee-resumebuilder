@@ -117,6 +117,6 @@ struct AITextGenerationService {
             case .apple: text = nil
             }
             guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AIProviderError.empty }; return text
-        } catch let error as AIProviderError { throw error } catch is DecodingError { throw AIProviderError.decoding } catch { throw AIProviderError.network }
+        } catch let error as AIProviderError { throw error } catch is DecodingError, is CocoaError { throw AIProviderError.decoding } catch { throw AIProviderError.network }
     }
 }
