@@ -175,10 +175,6 @@ enum ResumeDocumentConverter {
         return document(from: sections.map { $0.attributedText.string }.joined(separator: "\n"), name: resume.name)
     }
 
-    static func document(from draft: ResumeDraft) -> ResumeDocument {
-        document(from: draft.rawText.isEmpty ? JakesResumeTemplate().render(draft: draft).string : draft.rawText, name: draft.name)
-    }
-
     static func document(from text: String, name: String = "Untitled resume") -> ResumeDocument {
         let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         var sections: [ResumeDocumentSection] = []
@@ -214,8 +210,8 @@ enum ResumeDocumentConverter {
         case .header: return ResumeDocumentSection(kind: .header, title: "Contact", content: .contact(ContactContent()))
         case .summary: return ResumeDocumentSection(kind: .summary, title: title, content: .summary(lines.joined(separator: " ")))
         case .experience: return ResumeDocumentSection(kind: .experience, title: title, content: .experience(entries(from: lines)))
-        case .projects: return ResumeDocumentSection(kind: .projects, title: title, content: .projects([ProjectEntry(name: lines.first ?? "", description: lines.dropFirst().filter { !$0.hasPrefix("•") && !$0.hasPrefix("-") }.joined(separator: "\n"), bullets: bullets(from: Array(lines.dropFirst()))) ]))
-        case .education: return ResumeDocumentSection(kind: .education, title: title, content: .education([EducationEntry(institution: lines.first ?? "", qualification: lines.dropFirst().first ?? "", honors: lines.dropFirst(2).joined(separator: " "))]))
+        case .projects: return ResumeDocumentSection(kind: .projects, title: title, content: .projects(projects(from: lines)))
+        case .education: return ResumeDocumentSection(kind: .education, title: title, content: .education(education(from: lines)))
         case .skills: return ResumeDocumentSection(kind: .skills, title: title, content: .skills(lines.map { line in let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init); return parts.count == 1 ? SkillCategory(items: line.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) : SkillCategory(name: parts[0], items: parts[1].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }))
         case .certifications: return ResumeDocumentSection(kind: .certifications, title: title, content: .certifications(lines.map { CertificationEntry(name: $0) }))
         case .custom: return ResumeDocumentSection(kind: .custom, title: title, content: .custom(CustomContent(paragraphs: lines.filter { !$0.hasPrefix("•") && !$0.hasPrefix("-") }, bullets: bullets(from: lines))))
@@ -228,30 +224,63 @@ enum ResumeDocumentConverter {
             if line.hasPrefix("•") || line.hasPrefix("-") {
                 if result.isEmpty { result.append(ExperienceEntry()) }
                 result[result.count - 1].bullets.append(ResumeBullet(text: line.trimmingCharacters(in: CharacterSet(charactersIn: "•- "))))
-            } else if !result.isEmpty && !line.contains("|") {
+            } else if !result.isEmpty && !isEntryHeading(line) {
                 result[result.count - 1].bullets.append(ResumeBullet(text: line))
             } else {
-                let parts = line.components(separatedBy: "|")
-                result.append(ExperienceEntry(role: parts.first?.trimmingCharacters(in: .whitespaces) ?? line, employer: parts.dropFirst().first?.trimmingCharacters(in: .whitespaces) ?? "", dates: parts.dropFirst(2).joined(separator: "|").trimmingCharacters(in: .whitespaces), bullets: []))
+                // The prompt's layout: "Job Title | Company", then the date range at the end of the line.
+                let (heading, dates) = splitDates(line)
+                let parts = heading.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+                result.append(ExperienceEntry(role: parts[0], employer: dates.isEmpty ? parts.dropFirst().first ?? "" : parts.dropFirst().joined(separator: " | "), dates: dates.isEmpty ? parts.dropFirst(2).joined(separator: " | ") : dates))
             }
         }
         if result.isEmpty { result = [ExperienceEntry()] }
         return result
     }
 
+    /// The prompt's layout: "Project Name - Short Description | Tech1, Tech2", then one achievement per line.
+    private static func projects(from lines: [String]) -> [ProjectEntry] {
+        var result: [ProjectEntry] = []
+        for line in lines {
+            if result.isEmpty || isEntryHeading(line) && !line.hasPrefix("•") && !line.hasPrefix("-") {
+                let parts = line.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+                let title = parts[0].components(separatedBy: " - ")
+                result.append(ProjectEntry(name: title[0], description: title.dropFirst().joined(separator: " - "), technologies: parts.dropFirst().joined(separator: " | ")))
+            } else {
+                result[result.count - 1].bullets.append(ResumeBullet(text: line.trimmingCharacters(in: CharacterSet(charactersIn: "•- "))))
+            }
+        }
+        return result
+    }
+
+    /// The prompt's layout: "Degree Name   Month Year – Month Year", then the institution, then any honors.
+    private static func education(from lines: [String]) -> [EducationEntry] {
+        var result: [EducationEntry] = []
+        for line in lines {
+            if result.isEmpty || isEntryHeading(line) {
+                let (heading, dates) = splitDates(line)
+                let parts = heading.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+                result.append(EducationEntry(institution: parts.dropFirst().joined(separator: " | "), qualification: parts[0], dates: dates))
+            } else if result[result.count - 1].institution.isEmpty {
+                result[result.count - 1].institution = line
+            } else {
+                result[result.count - 1].honors = [result[result.count - 1].honors, line].filter { !$0.isEmpty }.joined(separator: " ")
+            }
+        }
+        return result
+    }
+
+    /// A line that starts a new entry: it holds "|" or ends in a date range.
+    private static func isEntryHeading(_ line: String) -> Bool { line.contains("|") || !splitDates(line).dates.isEmpty }
+
+    /// Splits a trailing range such as "Sep 2022 – Present" or "2018 - 2022" off the line.
+    static func splitDates(_ line: String) -> (text: String, dates: String) {
+        guard let range = line.range(of: #"(?:[A-Z][a-z]{2,8}\.? )?\d{4}\s*(?:[–—-]+|to)\s*(?:(?:[A-Z][a-z]{2,8}\.? )?\d{4}|Present|Current)$"#, options: .regularExpression) else { return (line, "") }
+        return (line[..<range.lowerBound].trimmingCharacters(in: CharacterSet(charactersIn: " \t|,-–—")), String(line[range]))
+    }
+
     private static func bullets(from lines: [String]) -> [ResumeBullet] { lines.filter { $0.hasPrefix("•") || $0.hasPrefix("-") }.map { ResumeBullet(text: $0.trimmingCharacters(in: CharacterSet(charactersIn: "•- "))) } }
     private static func isHeading(_ line: String) -> Bool { headingKind(line) != nil }
-    private static func headingKind(_ line: String) -> ResumeSectionKind? {
-        switch line.uppercased() {
-        case "SUMMARY", "PROFESSIONAL SUMMARY": .summary
-        case "WORK EXPERIENCE", "EXPERIENCE": .experience
-        case "PROJECTS": .projects
-        case "EDUCATION": .education
-        case "SKILLS", "SKILLS & ABILITIES": .skills
-        case "CERTIFICATIONS": .certifications
-        default: nil
-        }
-    }
+    private static func headingKind(_ line: String) -> ResumeSectionKind? { ResumeSectionKind.headings[line.uppercased()] }
 }
 
 struct ResumeDocumentRenderer {
@@ -285,24 +314,8 @@ struct ResumeDocumentRenderer {
     }
 
     func pdfData(for document: ResumeDocument) -> Data {
-        let text = attributedText(for: document)
-        guard !text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return Data() }
-        let page = CGRect(x: 0, y: 0, width: document.layout.pageWidth, height: document.layout.pageHeight)
-        let renderer = UIGraphicsPDFRenderer(bounds: page)
-        return renderer.pdfData { context in
-            let framesetter = CTFramesetterCreateWithAttributedString(text as CFAttributedString)
-            var location = 0
-            while location < text.length {
-                context.beginPage(); context.cgContext.saveGState(); context.cgContext.translateBy(x: 0, y: page.height); context.cgContext.scaleBy(x: 1, y: -1)
-                let path = CGPath(rect: page.insetBy(dx: document.layout.margin, dy: document.layout.margin), transform: nil)
-                let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: location, length: 0), path, nil)
-                CTFrameDraw(frame, context.cgContext); let visible = CTFrameGetVisibleStringRange(frame); context.cgContext.restoreGState()
-                guard visible.length > 0 else { break }; location += visible.length
-            }
-        }
+        ResumeExportService.paginatedPDF(attributedText(for: document), pageSize: CGSize(width: document.layout.pageWidth, height: document.layout.pageHeight), margin: document.layout.margin)
     }
-
-    func pageCount(for document: ResumeDocument) -> Int { PDFDocument(data: pdfData(for: document))?.pageCount ?? 0 }
 
     private func append(_ value: String, font: UIFont, color: UIColor = .black, alignment: NSTextAlignment = .left, spacing: CGFloat = 0, hanging: Bool = false, to result: NSMutableAttributedString) {
         guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -340,12 +353,18 @@ enum ResumeLaTeXImporter {
         var text = source
         text = text.replacingOccurrences(of: #"(?s).*?\\begin\{document\}"#, with: "", options: .regularExpression)
         text = text.replacingOccurrences(of: #"(?s)\\end\{document\}.*"#, with: "", options: .regularExpression)
-        let commands = Set(text.matches(of: /\\[A-Za-z]+\*?/).map { String($0.output) }).filter { !["\\textbf", "\\textit", "\\emph", "\\section", "\\section*", "\\subsection", "\\subsection*", "\\item", "\\begin", "\\end", "\\hfill", "\\linebreak", "\\newline"].contains($0) }.sorted()
+        // Jake's template: % comment lines, \href URLs (the shown text stays), }{ between a macro's fields, $|$ separators, and spacing commands whose argument is a size.
+        text = text.replacingOccurrences(of: #"(?m)(?<!\\)%.*$"#, with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\\href\{[^}]*\}"#, with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?<!\\)\}[ \t]*\{"#, with: " | ", options: .regularExpression)
+        text = text.replacingOccurrences(of: "$|$", with: "|")
+        text = text.replacingOccurrences(of: #"\\[vh](?:space|skip)\*?\{[^}]*\}"#, with: "", options: .regularExpression)
+        let commands = Set(text.matches(of: /\\[A-Za-z]+\*?/).map { String($0.output) }).filter { !["\\textbf", "\\textit", "\\emph", "\\section", "\\section*", "\\subsection", "\\subsection*", "\\item", "\\begin", "\\end", "\\hfill", "\\linebreak", "\\newline", "\\textbackslash"].contains($0) }.sorted()
         text = text.replacingOccurrences(of: #"\\(?:textbf|textit|emph|section\*?|subsection\*?)\{([^{}]*)\}"#, with: "$1", options: .regularExpression)
         text = text.replacingOccurrences(of: #"\\item\s*"#, with: "• ", options: .regularExpression)
         text = text.replacingOccurrences(of: #"\\(?:begin|end)\{[^}]+\}"#, with: "\n", options: .regularExpression)
         text = text.replacingOccurrences(of: #"\\(?:hfill|linebreak|newline|\\)"#, with: "\n", options: .regularExpression)
-        for (escaped, value) in [("\\&", "&"), ("\\%", "%"), ("\\#", "#"), ("\\_", "_"), ("\\{", "{"), ("\\}", "}"), (#"\\textbackslash{}"#, "\\")] { text = text.replacingOccurrences(of: escaped, with: value) }
+        for (escaped, value) in [("\\&", "&"), ("\\%", "%"), ("\\#", "#"), ("\\_", "_"), ("\\{", "{"), ("\\}", "}"), ("\\textbackslash{}", "\\")] { text = text.replacingOccurrences(of: escaped, with: value) }
         text = text.replacingOccurrences(of: #"\\[A-Za-z]+(?:\*)?(?:\[[^]]*\])?"#, with: "", options: .regularExpression)
         return Result(text: text.replacingOccurrences(of: "{", with: "").replacingOccurrences(of: "}", with: "").trimmingCharacters(in: .whitespacesAndNewlines), unsupportedCommands: commands)
     }

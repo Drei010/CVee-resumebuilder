@@ -512,7 +512,7 @@ struct AIProviderView: View {
     @State private var showingKeyEditor = false
     @State private var hasSavedKey = false
 
-    private var appleUnavailable: Bool { FoundationModelsAvailability().state().description == "This device does not support Apple Intelligence generation." }
+    private var appleUnavailable: Bool { !FoundationModelsAvailability().isDeviceEligible }
     private var modelSelection: Binding<String> {
         Binding(
             get: { provider.models.contains(where: { $0.id == modelID }) ? modelID : provider.defaultModel.id },
@@ -1585,7 +1585,9 @@ struct WorkHistoryView: View {
         let task = cardTask.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !company.isEmpty, !jobTitle.isEmpty, !task.isEmpty else { return }
 
-        let experience = WorkExperience(jobTitle: jobTitle, company: company, startDate: .now, tasks: [task])
+        // Quick capture has no date fields, so a new task takes the dates of the newest task for the same role.
+        let sameRole = experiences.filter { $0.company == company && $0.jobTitle == jobTitle }.max { $0.createdAt < $1.createdAt }
+        let experience = WorkExperience(jobTitle: jobTitle, company: company, startDate: sameRole?.startDate ?? .now, endDate: sameRole?.endDate, tasks: [task])
         modelContext.insert(experience)
         do {
             try modelContext.save()
@@ -1619,6 +1621,8 @@ struct TaskDetailView: View {
     @State private var title: String
     @State private var company: String
     @State private var tasks: String
+    @State private var startDate: Date
+    @State private var endDate: Date?
     @State private var showingTaskEnhancementReview = false
 
     init(experience: WorkExperience) {
@@ -1626,6 +1630,8 @@ struct TaskDetailView: View {
         _title = State(initialValue: experience.jobTitle)
         _company = State(initialValue: experience.company)
         _tasks = State(initialValue: experience.tasksText)
+        _startDate = State(initialValue: experience.startDate)
+        _endDate = State(initialValue: experience.endDate)
     }
 
     private var linkedResumes: [Resume] {
@@ -1640,6 +1646,9 @@ struct TaskDetailView: View {
                     if isEditing {
                         TextField("Task title", text: $title)
                         TextField("Company", text: $company)
+                        DatePicker("Start date", selection: $startDate, displayedComponents: .date)
+                        Toggle("Currently working here", isOn: Binding(get: { endDate == nil }, set: { endDate = $0 ? nil : .now }))
+                        if endDate != nil { DatePicker("End date", selection: Binding($endDate)!, displayedComponents: .date) }
                         TextEditor(text: $tasks).frame(minHeight: 180)
                             .accessibilityLabel("Task details")
                             .accessibilityIdentifier("task.detail.details")
@@ -1687,6 +1696,8 @@ struct TaskDetailView: View {
                             experience.jobTitle = title
                             experience.company = company
                             experience.tasksText = tasks
+                            experience.startDate = startDate
+                            experience.endDate = endDate
                             do { try modelContext.save(); isEditing = false }
                             catch { saveError = error.localizedDescription }
                         } label: {
@@ -1717,6 +1728,8 @@ struct TaskDetailView: View {
                             title = experience.jobTitle
                             company = experience.company
                             tasks = experience.tasksText
+                            startDate = experience.startDate
+                            endDate = experience.endDate
                             isEditing = false
                         } else { dismiss() }
                     }
@@ -1768,7 +1781,7 @@ struct SavedJobsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let onOpenTasks: () -> Void
 
-    /// The row statuses, in the order the filter menu lists them; see `jobStatus(for:)`.
+    /// The row statuses, in the order the filter menu lists them; see `JobTarget.statusLabel`.
     private static let statuses = ["Ready for resume", "Needs review", "Needs description"]
 
     init(onOpenTasks: @escaping () -> Void = {}) {
@@ -1783,7 +1796,7 @@ struct SavedJobsView: View {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return jobs.filter { job in
             let matchesCompany = selectedCompany == "All companies" || job.displayCompany == selectedCompany
-            let matchesStatus = selectedStatus == "All statuses" || jobStatus(for: job) == selectedStatus
+            let matchesStatus = selectedStatus == "All statuses" || job.statusLabel == selectedStatus
             let matchesSearch = query.isEmpty || [job.parsedTitle, job.parsedCompany, job.rawText]
                 .compactMap { $0 }
                 .joined(separator: " ")
@@ -1959,12 +1972,6 @@ struct SavedJobsView: View {
         selectedStatus = "All statuses"
     }
 
-    private func jobStatus(for job: JobTarget) -> String {
-        if !job.hasDescription { return "Needs description" }
-        if job.captureReviewState == .needsReview { return "Needs review" }
-        return "Ready for resume"
-    }
-
     @ViewBuilder
     private func jobRow(_ job: JobTarget) -> some View {
         Button { selectedJob = job } label: {
@@ -1972,7 +1979,7 @@ struct SavedJobsView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(job.displayTitle).font(.headline)
                     MetadataPill(text: job.displayCompany)
-                    Text(jobStatus(for: job))
+                    Text(job.statusLabel)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(job.isUsableForResume ? CVeeColors.green : CVeeColors.secondary)
                     Text(job.createdAt, style: .date).font(.caption).foregroundStyle(CVeeColors.secondary)
@@ -2059,8 +2066,10 @@ struct JobDetailView: View {
                     } else {
                         LabeledContent("Job", value: job.parsedTitle ?? "Untitled job")
                         LabeledContent("Company", value: job.displayCompany)
-                        if let sourceURL = job.sourceURL, !sourceURL.isEmpty { Link(destination: URL(string: sourceURL) ?? URL(string: "https://example.com")!) { Label(sourceURL, systemImage: "link") }.lineLimit(1) }
-                        Label(jobStatus(for: job), systemImage: job.isUsableForResume ? "checkmark.circle" : "exclamationmark.circle")
+                        if let sourceURL = job.sourceURL, !sourceURL.isEmpty {
+                            if let url = URL(jobLink: sourceURL) { Link(destination: url) { Label(sourceURL, systemImage: "link") }.lineLimit(1) } else { Label(sourceURL, systemImage: "link").lineLimit(1) }
+                        }
+                        Label(job.statusLabel, systemImage: job.isUsableForResume ? "checkmark.circle" : "exclamationmark.circle")
                             .foregroundStyle(job.isUsableForResume ? CVeeColors.green : CVeeColors.secondary)
                         Text(job.rawText)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2118,10 +2127,13 @@ struct JobDetailView: View {
                 Section {
                     if isEditing {
                         Button("Save changes") {
+                            // A link typed without https:// still opens and fetches; one that isn't a web address is refused.
+                            let link = sourceURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard link.isEmpty || URL(jobLink: link) != nil else { saveError = JobCaptureError.invalidURL.localizedDescription; return }
                             job.parsedTitle = name
                             job.parsedCompany = company
                             job.rawText = description
-                            job.sourceURL = sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : sourceURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                            job.sourceURL = URL(jobLink: link)?.absoluteString
                             job.captureReviewState = job.hasDescription ? .reviewed : .needsReview
                             do { try modelContext.save(); isEditing = false; extractionNote = nil }
                             catch { saveError = error.localizedDescription }
@@ -2180,12 +2192,6 @@ struct JobDetailView: View {
                 ResumeEditorView(resume: resume)
             }
         }
-    }
-
-    private func jobStatus(for job: JobTarget) -> String {
-        if !job.hasDescription { return "Needs description" }
-        if job.captureReviewState == .needsReview { return "Needs review" }
-        return "Ready for resume"
     }
 
     private func fetchDescription() {
@@ -2296,7 +2302,7 @@ struct AddJobView: View {
             } message: { Text(saveError ?? "Try again.") }
             .alert("Resume saved draft?", isPresented: $showingResumeDraft) {
                 Button("Continue draft") { if let saved = JobCaptureDraftStore.load() { draft = saved; mode = saved.sourceType == .document ? .document : saved.sourceType == .screenshot ? .screenshots : .paste } }
-                Button("Start over", role: .destructive) { JobCaptureDraftStore.clear() }
+                Button("Start over", role: .destructive) { if let captureID = JobCaptureDraftStore.load()?.captureID { JobCaptureStore().removeAttachments(for: captureID) }; JobCaptureDraftStore.clear() }
             } message: { Text("Your unfinished capture is stored only on this device.") }
             .confirmationDialog("Possible duplicate", isPresented: $showingDuplicatePrompt, titleVisibility: .visible) {
                 Button("Open existing") { if let duplicateJob { dismiss(); NotificationCenter.default.post(name: .cveeOpenJob, object: duplicateJob.id) } }
@@ -2407,6 +2413,11 @@ struct AddJobView: View {
     }
 
     private func save() {
+        // A link typed without https:// still opens and fetches; one that isn't a web address is refused.
+        if !draft.sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard let url = URL(jobLink: draft.sourceURL) else { saveError = JobCaptureError.invalidURL.localizedDescription; return }
+            draft.sourceURL = url.absoluteString
+        }
         if let duplicate = JobTargetDuplicateDetector.duplicate(of: draft, in: jobs) { duplicateJob = duplicate; showingDuplicatePrompt = true; return }
         persistSave()
     }
@@ -2725,15 +2736,9 @@ struct NewResumeView: View {
     private var filteredJobs: [JobTarget] {
         jobs.filter {
             (jobCompany == "All companies" || $0.displayCompany == jobCompany) &&
-            (jobStatus == "All statuses" || Self.status(for: $0) == jobStatus) &&
+            (jobStatus == "All statuses" || $0.statusLabel == jobStatus) &&
             (jobSearch.isEmpty || [$0.parsedTitle ?? "", $0.parsedCompany ?? "", $0.rawText, $0.sourceURL ?? ""].joined(separator: " ").localizedCaseInsensitiveContains(jobSearch))
         }
-    }
-    /// The same status rule as the Saved Jobs rows and filter.
-    private static func status(for job: JobTarget) -> String {
-        if !job.hasDescription { return "Needs description" }
-        if job.captureReviewState == .needsReview { return "Needs review" }
-        return "Ready for resume"
     }
     private var mascotMood: MascotMood {
         switch step {
@@ -3416,12 +3421,14 @@ struct NewResumeView: View {
             if generatedDraft != nil && ProcessInfo.processInfo.arguments.contains("-ui-testing-regeneration-failure") { throw AIProviderError.provider }
             let draft: ResumeDraft
             if ProcessInfo.processInfo.arguments.contains("-resume-format-fixture") {
-                draft = ResumeDraft(name: "Test User — Full Stack AI Developer", summary: "AI developer focused on reliable, user-centered software.", experience: selectedWork.map { ($0.jobTitle, $0.tasks) }, skills: ["SwiftUI", "SwiftData", "Python"])
+                // UI tests read this text; the job match test expects Python in it.
+                let lines = ["TEST USER — FULL STACK AI DEVELOPER", "TAILORED RESUME", "SUMMARY", "AI developer focused on reliable, user-centered software.", "EXPERIENCE"] + selectedWork.flatMap { [$0.jobTitle] + $0.tasks.map { "• \($0)" } } + ["SKILLS & ABILITIES", "SwiftUI  •  SwiftData  •  Python"]
+                draft = ResumeDraft(name: "Test User — Full Stack AI Developer", rawText: ResumeTextFormatter.format(lines.joined(separator: "\n")).string)
             } else {
                 draft = try await ResumeGenerationService().generate(jobText: job?.rawText ?? "", work: selectedWork, profileName: draftName, profileText: profileText, baselineText: baselineText.isEmpty ? nil : baselineText)
             }
             generatedDraft = draft
-            generatedText = draft.rawText.isEmpty ? JakesResumeTemplate().render(draft: draft).string : draft.rawText
+            generatedText = draft.rawText
             refreshGeneratedPreview()
             generatedLaTeX = ""; generatedEditorMode = .formatted; isEditingGenerated = false
             generatedInputSignature = signature; generatedJob = job; generatedExperienceIDs = selectedWork.map(\.id)
@@ -3529,17 +3536,8 @@ struct ResumeEditorView: View {
             }
         }
         .sheet(isPresented: $showingAnalysis) {
-            ResumeAnalysisSheet(resumeName: resume.name, attributedText: reportText, job: resume.jobTarget, workLibrary: workExperiences.map { ResumeAnalysisWorkEntry(id: $0.id, role: $0.jobTitle, company: $0.company, achievement: $0.tasks.joined(separator: "\n"), includedInResume: resume.linkedWorkExperienceIDs.contains($0.id)) })
+            ResumeAnalysisSheet(resumeName: resume.name, attributedText: ResumeExportService().text(for: resume), job: resume.jobTarget, workLibrary: workExperiences.map { ResumeAnalysisWorkEntry(id: $0.id, role: $0.jobTitle, company: $0.company, achievement: $0.tasks.joined(separator: "\n"), includedInResume: resume.linkedWorkExperienceIDs.contains($0.id)) })
         }
-    }
-
-    private var reportText: NSAttributedString {
-        let result = NSMutableAttributedString()
-        for section in resume.sections.sorted(by: { $0.order < $1.order }) {
-            result.append(section.attributedText)
-            result.append(NSAttributedString(string: "\n"))
-        }
-        return result
     }
 }
 
@@ -3636,9 +3634,11 @@ struct ResumeAnalysisSheet: View {
     @State private var showingProvider = false
     @State private var pendingSave = false
     @State private var pendingChecklistData: Data?
+    /// Tagged once in `load()`: tagging the whole job post on every keystroke made the phrase field lag.
+    @State private var suggestedPhrases: [String] = []
 
     private var description: String { job?.rawText ?? "" }
-    private var localSuggestions: [String] { ResumeAnalysisService.suggestedRequirements(from: description).filter { phrase in !requirements.contains { ResumeAnalysisService.normalized($0.phrase) == ResumeAnalysisService.normalized(phrase) } } }
+    private var localSuggestions: [String] { suggestedPhrases.filter { phrase in !requirements.contains { ResumeAnalysisService.normalized($0.phrase) == ResumeAnalysisService.normalized(phrase) } } }
     /// The match percentage once confirmed phrases are saved for the current job description.
     private var matchPercentage: Int? { isChecklistSaved && !jobChanged ? report?.matchPercentage : nil }
 
@@ -3900,6 +3900,7 @@ struct ResumeAnalysisSheet: View {
 
     private func load() {
         guard let job else { recheck(); return }
+        suggestedPhrases = ResumeAnalysisService.suggestedRequirements(from: job.rawText)
         if let checklist = JobRequirementChecklist.load(job.requirementChecklistData) {
             let savedPhrases = checklist.requirements
             requirements = checklist.requirements.filter { ResumeAnalysisService.match($0.phrase, in: job.rawText) != nil }

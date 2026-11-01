@@ -110,7 +110,7 @@ struct ResumeAnalysisReport {
 
 struct ResumeAnalysisService {
     static let matchingMethod = "Case-insensitive, Unicode-normalized whole-term phrase match"
-    static let headings = Set(["WORK EXPERIENCE", "EXPERIENCE", "PROJECTS", "SKILLS", "SKILLS & ABILITIES", "CERTIFICATIONS", "EDUCATION", "SUMMARY"])
+    static let headings = Set(ResumeSectionKind.headings.keys)
 
     func analyze(_ snapshot: ResumeAnalysisSnapshot, pdfData: Data? = nil, includeDocumentHealth: Bool = true) -> ResumeAnalysisReport {
         let resumeText = snapshot.attributedResume.string
@@ -174,8 +174,10 @@ struct ResumeAnalysisService {
         return String(hash, radix: 16)
     }
 
-    static func match(_ phrase: String, in text: String) -> Range<String.Index>? {
-        let source = normalized(text)
+    static func match(_ phrase: String, in text: String) -> Range<String.Index>? { match(phrase, normalizedText: normalized(text)) }
+
+    /// `match(_:in:)` for text already passed through `normalized(_:)`, so many phrases can be checked against one text.
+    private static func match(_ phrase: String, normalizedText source: String) -> Range<String.Index>? {
         let target = normalized(phrase)
         guard !target.isEmpty else { return nil }
         var searchStart = source.startIndex
@@ -261,8 +263,9 @@ struct ResumeAnalysisService {
         if let regex = try? NSRegularExpression(pattern: technicalPattern) {
             regex.matches(in: description, range: NSRange(description.startIndex..<description.endIndex, in: description)).forEach { candidates.append((description as NSString).substring(with: $0.range)) }
         }
+        let normalizedDescription = normalized(description)
         var seen = Set<String>()
-        return candidates.filter { Self.match($0, in: description) != nil && seen.insert(Self.normalized($0)).inserted }.prefix(30).map { $0 }
+        return candidates.filter { Self.match($0, normalizedText: normalizedDescription) != nil && seen.insert(Self.normalized($0)).inserted }.prefix(30).map { $0 }
     }
 }
 

@@ -66,6 +66,14 @@ struct JobCaptureDraft: Codable, Equatable {
 
 extension URL {
     var isHTTPURL: Bool { scheme?.lowercased() == "http" || scheme?.lowercased() == "https" }
+
+    /// A typed job link as a web URL, with https:// added when no scheme was typed; nil when it still isn't http(s).
+    init?(jobLink value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A host needs a dot and no spaces, so typed words like "Barista job" aren't saved as a link.
+        guard let url = URL(string: trimmed.contains("://") ? trimmed : "https://" + trimmed), url.isHTTPURL, let host = url.host, host.contains("."), !host.contains(where: { $0.isWhitespace || $0 == "%" }) else { return nil }
+        self = url
+    }
 }
 
 enum JobCaptureError: LocalizedError {
@@ -129,28 +137,6 @@ struct JobCaptureStore {
         }.sorted { $0.createdAt > $1.createdAt }
     }
 
-    func save(package: JobCapturePackage, attachmentURLs: [URL] = []) throws {
-        let staging = inbox.appendingPathComponent(".staging-\(package.id.uuidString)", isDirectory: true)
-        let destination = inbox.appendingPathComponent(package.id.uuidString, isDirectory: true)
-        try? fileManager.removeItem(at: staging)
-        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
-        var copied: [JobCapturePackageAttachment] = []
-        for url in attachmentURLs {
-            let values = try url.resourceValues(forKeys: [.fileSizeKey])
-            guard (values.fileSize ?? 0) <= JobCaptureLimits.maxBytes else { throw JobCaptureError.tooLarge }
-            let filename = url.lastPathComponent.isEmpty ? "attachment" : url.lastPathComponent
-            let relative = filename.replacingOccurrences(of: "/", with: "-")
-            try Data(contentsOf: url).write(to: staging.appendingPathComponent(relative), options: .atomic)
-            copied.append(JobCapturePackageAttachment(filename: filename, relativePath: relative, contentType: url.pathExtension))
-        }
-        var package = package
-        package.attachments = package.attachments + copied
-        let packageData = try JSONEncoder().encoded(package)
-        try packageData.write(to: staging.appendingPathComponent("package.json"), options: .atomic)
-        try? fileManager.removeItem(at: destination)
-        try fileManager.moveItem(at: staging, to: destination)
-    }
-
     func copyAttachments(from package: JobCapturePackage) throws -> [JobAttachmentReference] {
         let source = inbox.appendingPathComponent(package.id.uuidString, isDirectory: true)
         let destination = attachments.appendingPathComponent(package.id.uuidString, isDirectory: true)
@@ -205,7 +191,8 @@ struct JobCaptureStore {
         let existing = try context.fetch(FetchDescriptor<JobTarget>())
         var imported = 0
         for package in packages() where !existing.contains(where: { $0.captureID == package.id }) {
-            let refs = try copyAttachments(from: package)
+            // A package whose files can't be copied stays in the inbox and is retried next launch, without blocking the others.
+            guard let refs = try? copyAttachments(from: package) else { continue }
             // The share extension stores a type identifier, such as public.png, which names no "image"; older captures stored a MIME type or file extension.
             let sourceType: JobTargetSource = package.attachments.contains(where: { $0.contentType.lowercased().contains("image") || (UTType($0.contentType) ?? UTType(filenameExtension: $0.contentType))?.conforms(to: .image) == true }) ? .screenshot : .shareExtension
             let job = JobTarget(sourceType: sourceType, rawText: package.text ?? "", parsedTitle: package.title, parsedCompany: package.company, sourceURL: package.sourceURL, captureID: package.id, attachmentReferencesData: try? JSONEncoder().encode(refs), captureReviewState: .needsReview)
@@ -216,10 +203,6 @@ struct JobCaptureStore {
         }
         return imported
     }
-}
-
-private extension JSONEncoder {
-    func encoded<T: Encodable>(_ value: T) throws -> Data { try encode(value) }
 }
 
 enum JobCaptureDraftStore {
@@ -366,7 +349,8 @@ struct JobDescriptionFetcher {
     struct Result { let text: String; let title: String?; let company: String? }
 
     func fetch(urlString: String) async throws -> Result {
-        guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)), url.isHTTPURL else { throw JobCaptureError.invalidURL }
+        // iOS refuses plain http (App Transport Security), so ask for the https page.
+        guard let url = URL(jobLink: urlString.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "^http://", with: "https://", options: [.regularExpression, .caseInsensitive])) else { throw JobCaptureError.invalidURL }
         var request = URLRequest(url: url, timeoutInterval: 20)
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
@@ -377,15 +361,34 @@ struct JobDescriptionFetcher {
             if data.count > 2_000_000 { throw JobCaptureError.fetchFailed("The page is larger than 2 MB.") }
         }
         let html = String(decoding: data, as: UTF8.self)
-        let title = metadata("og:title", in: html) ?? metadata("title", in: html)
-        let company = metadata("og:site_name", in: html)
-        let text = LinkedInJobFetcher.visibleText(from: html)
+        let title = Self.metadata("og:title", in: html) ?? Self.metadata("title", in: html)
+        let company = Self.metadata("og:site_name", in: html)
+        let text = Self.visibleText(from: html)
         guard text.count > 40 else { throw JobCaptureError.fetchFailed("The page did not contain readable job details.") }
         return Result(text: text, title: title, company: company)
     }
 
-    private func metadata(_ name: String, in html: String) -> String? {
-        let pattern = "(?is)<meta[^>]+(?:property|name)=[\\\"']\(name)[\\\"'][^>]+content=[\\\"']([^\\\"']+)"
-        return html.range(of: pattern, options: .regularExpression).map { String(html[$0]).replacingOccurrences(of: "(?is).*content=[\\\"']|[\\\"'].*", with: "", options: .regularExpression) }
+    static func visibleText(from html: String) -> String {
+        var value = html.replacingOccurrences(of: "(?is)<script.*?</script>|<style.*?</style>|<noscript.*?</noscript>", with: " ", options: .regularExpression)
+        value = value.replacingOccurrences(of: "(?s)<[^>]+>", with: " ", options: .regularExpression)
+        return decodingEntities(value).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// A meta tag's content, read to the quote that opened it, so an apostrophe inside double quotes stays.
+    static func metadata(_ name: String, in html: String) -> String? {
+        guard let regex = try? Regex("(?is)<meta[^>]+(?:property|name)=[\"']\(name)[\"'][^>]+content=([\"'])(.*?)\\1"),
+              let value = html.firstMatch(of: regex)?.output[2].substring, !value.isEmpty else { return nil }
+        return decodingEntities(String(value))
+    }
+
+    /// Turns HTML character references such as &amp;, &#39; and &#x2019; back into characters; unknown names stay as written.
+    static func decodingEntities(_ text: String) -> String {
+        let named = ["amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'", "nbsp": " ", "rsquo": "’", "lsquo": "‘", "rdquo": "”", "ldquo": "“", "ndash": "–", "mdash": "—", "hellip": "…", "bull": "•", "middot": "·"]
+        return text.replacing(/&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z]+);/) { match in
+            let name = String(match.output.1)
+            if let value = named[name] { return value }
+            let code = name.hasPrefix("#x") || name.hasPrefix("#X") ? UInt32(name.dropFirst(2), radix: 16) : name.hasPrefix("#") ? UInt32(name.dropFirst()) : nil
+            return code.flatMap { Unicode.Scalar($0) }.map { String(Character($0)) } ?? String(match.output.0)
+        }
     }
 }

@@ -2,6 +2,31 @@
 
 Dated history of shipped changes, newest first. Dated entries come from the git history (commit dates, pull request numbers from merge commits, and short commit hashes where one day holds several commits) and from the dated reports in [design-audit/](design-audit/README.md). What CVee does today is in [README.md](README.md); planned work is in [ROADMAP.md](ROADMAP.md).
 
+## 2026-11-01
+
+### Audit fixes
+
+From the Oct 31 code audit. The first three landed in dce9148.
+
+- Word (.docx) files now import in task import and Add job; every one used to end with "This document has no readable text."
+- Deleting a saved job clears the job link of the resumes made for it, so no resume points at a deleted job.
+- A remote provider reply that isn't JSON says "The AI provider returned an unreadable response." instead of asking to check the internet connection.
+- Deleting an entry, achievement, or link in the section editor no longer risks a crash: rows find their item by id instead of by position.
+- Quick capture gives a new task the dates of the newest task with the same role and company instead of today, and Edit in task details now changes a task's dates.
+- Check job match on a saved resume reads the section editor's current text (the RTF sections only for legacy resumes), so later edits, editable copies, and LaTeX imports are checked.
+- Task import with OpenAI, Gemini, or Claude asks for device authentication once per document instead of once per 20 lines. A cancelled or failed unlock says "The API key stayed locked. Try again and unlock it when asked." instead of asking to add a key.
+- The report's local phrase suggestions are worked out once when it opens, not on every keystroke.
+- In the section editor, edits made before the next autosave are one undo step, and the preview redraws once typing pauses, keeping the page count from that render.
+- LaTeX import reads Jake's template: comment lines, `\href` URLs, and spacing commands such as `\vspace{1pt}` are dropped, and `}{` between fields and `$|$` become separators. LaTeX import now unescapes `\textbackslash{}` too.
+- Resumes saved from the wizard fill the section editor's fields the way the generation prompt lays them out: work dates go to Dates instead of Employer, and each project and degree becomes its own entry.
+- The task enhancement example keeps the input's facts in two sentences instead of turning "about 3000 dollars per month" into "$40,000 in annual cost savings".
+- Whether the device supports Apple Intelligence comes from Foundation Models' availability, not from comparing a message, and a blank Apple Intelligence reply is an error, as it already was for the remote providers.
+- Fetch description decodes HTML entities in the page text and title, keeps apostrophes in titles, and fetches http links over https. A job link typed without https:// is saved with it, text that isn't a web address is refused, and job detail no longer opens example.com for a link it can't read.
+- Start over on a saved Add job draft removes the files the draft copied, as Discard does. An inbox package whose files can't be copied no longer stops older packages from importing.
+- Save to CVee checks a file's size before reading it. A share over 10 MB says "Attachments must be 10 MB or smaller in total." and turns Save off, instead of "Could not save. Try again."
+- Removed code nothing used: `LinkedInJobFetcher` and its result and error types, `GenerationError`, `ResumeTemplate` and `JakesResumeTemplate` with the guessed `ResumeDraft` fields, the `parseResumeSystem` and `tailorSystem` prompts, `TaskImportError.unavailable`, `JobCaptureStore.save(package:)`, `ResumeDocumentRenderer.pageCount(for:)`, and `ResumeIcon.png` (812 KB). One heading table, one LaTeX-to-text function, one paged PDF function (structured resumes now get the white page fill too), and `JobTarget.statusLabel` replace the copies that had drifted apart.
+- New unit tests cover DOCX text, the converter on the prompt's layout, a Jake's-template import, the editor's id-based bindings, job link normalization, and entity decoding and titles for fetched pages.
+
 ## 2026-10-21
 
 ### LinkedIn screenshot import

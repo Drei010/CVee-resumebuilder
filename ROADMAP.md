@@ -25,11 +25,9 @@ The dropped redesign proposal also listed API provider choice and a separate res
 ## Open questions
 
 - **Release target.** No release date, version plan, or App Store plan is on record. The app is version 1.0 (build 1), and CI already runs on `v*` tags. Source: [ios-tests.yml](.github/workflows/ios-tests.yml); [project.pbxproj](CVee-resumebuilder.xcodeproj/project.pbxproj) (`MARKETING_VERSION`).
-- **Should "Check job match" on a saved resume read the structured document?** It reads the text from the last wizard save, so later edits in the section editor are not checked, and editable copies and LaTeX imports have no text to check. Source: [README.md](README.md#resume-report).
 - **Should the App Shortcuts open a specific tab?** "Create a New Resume" and "Open Work History" both only open the app, so a cold launch shows Tasks, not the wizard. Source: [CVeeIntents.swift](CVee-resumebuilder/CVeeIntents.swift).
 
 ## Housekeeping
 
-- **Ignore or remove local build output.** The project folder holds `build/`, `.derivedData/`, `ci-diagnostics/`, and `TestResults-*.xcresult`. [.gitignore](.gitignore) covers `.derivedData/`, `TestResults.xcresult/`, `TestResults-*.xcresult/`, and `ci-diagnostics/`, but not `build/` or `.playwright-cli/`.
 - **Correct the test script's messages.** `scripts/test-ios.sh` prints "Building UI tests" and "Running UI tests" although it runs both the unit and UI test targets. No other defect is on record: the exit code 70 in the Sept 5 fix plan came from CoreSimulator being unavailable in that environment, and REVIEW.md records a passing run of the script on iPhone 17. Source: [test-ios.sh](scripts/test-ios.sh); [fix plan](design-audit/2026-09-05-cvee-uiux-audit/FIX-PLAN.md) ("Implementation status"); [REVIEW.md](design-audit/REVIEW.md) ("Final verification update").
-- **Remove or use dead code.** `LinkedInJobFetcher.fetch`, the `.linkedInURL` job source type, the `Resume.template` value (always `"jakes"`), and the `ResumePrompt.parseResumeSystem` and `ResumePrompt.tailorSystem` prompts are never used. Source: [CVeeCore.swift](CVee-resumebuilder/CVeeCore.swift).
+- **Remove or use dead code.** The `.linkedInURL` job source type and the `Resume.template` value (always `"jakes"`) are never used. Source: [CVeeCore.swift](CVee-resumebuilder/CVeeCore.swift).

@@ -1,5 +1,6 @@
 import XCTest
 import SwiftData
+import SwiftUI
 import PDFKit
 import UIKit
 @testable import CVee_resumebuilder
@@ -66,6 +67,86 @@ final class ResumeRenderingTests: XCTestCase {
         XCTAssertEqual(rendered.components(separatedBy: "UNIQUE_BULLET").count - 1, 1)
         document.sections[1].content = .custom(CustomContent(paragraphs: ["First paragraph", "Second paragraph"], bullets: [ResumeBullet(text: "UNIQUE_BULLET")]))
         XCTAssertEqual(ResumeDocumentRenderer().attributedText(for: document).string.components(separatedBy: "UNIQUE_BULLET").count - 1, 1)
+    }
+
+    func testConverterReadsTheGenerationPromptLayout() {
+        let text = """
+        Taylor Example
+        taylor@example.com | linkedin.com/in/taylor
+        WORK EXPERIENCE
+        iOS Engineer | Acme Corp. Seattle, WA                 Sep 2022 – Present
+        Shipped offline sync for 40,000 users.
+        Cut crash rate by 30%.
+        Intern | Beta LLC                 Jun 2021 – Aug 2021
+        Built test tooling.
+        PROJECTS
+        CVee - Resume builder | Swift, SwiftUI
+        Added PDF export.
+        Budget Bot - Expense tracker | Python
+        Parsed bank statements.
+        EDUCATION
+        BS Computer Science                 Sep 2017 – Jun 2021
+        State University - Austin, USA
+        Dean's List
+        MS Software Engineering                 Sep 2021 – Jun 2022
+        Tech Institute
+        """
+        let sections = ResumeDocumentConverter.document(from: text).sections
+        guard case .experience(let jobs)? = sections.first(where: { $0.kind == .experience })?.content,
+              case .projects(let projects)? = sections.first(where: { $0.kind == .projects })?.content,
+              case .education(let schools)? = sections.first(where: { $0.kind == .education })?.content else { return XCTFail("Missing a section") }
+        XCTAssertEqual(jobs.map(\.role), ["iOS Engineer", "Intern"])
+        XCTAssertEqual(jobs.map(\.employer), ["Acme Corp. Seattle, WA", "Beta LLC"])
+        XCTAssertEqual(jobs.map(\.dates), ["Sep 2022 – Present", "Jun 2021 – Aug 2021"])
+        XCTAssertEqual(jobs[0].bullets.map(\.text), ["Shipped offline sync for 40,000 users.", "Cut crash rate by 30%."])
+        XCTAssertEqual(projects.map(\.name), ["CVee", "Budget Bot"])
+        XCTAssertEqual(projects.map(\.description), ["Resume builder", "Expense tracker"])
+        XCTAssertEqual(projects.map(\.technologies), ["Swift, SwiftUI", "Python"])
+        XCTAssertEqual(projects[1].bullets.map(\.text), ["Parsed bank statements."])
+        XCTAssertEqual(schools.map(\.qualification), ["BS Computer Science", "MS Software Engineering"])
+        XCTAssertEqual(schools.map(\.institution), ["State University - Austin, USA", "Tech Institute"])
+        XCTAssertEqual(schools.map(\.dates), ["Sep 2017 – Jun 2021", "Sep 2021 – Jun 2022"])
+        XCTAssertEqual(schools[0].honors, "Dean's List")
+    }
+
+    func testLatexImporterReadsJakesTemplate() {
+        let source = #"""
+        \documentclass[letterpaper,11pt]{article}
+        \begin{document}
+        %----------HEADING----------
+        \begin{center}
+            \textbf{\Huge \scshape Jake Ryan} \\ \vspace{1pt}
+            \small 123-456-7890 $|$ \href{mailto:jake@su.edu}{\underline{jake@su.edu}}
+        \end{center}
+        %-----------EXPERIENCE-----------
+        \section{Experience}
+          \resumeSubHeadingListStart
+            \resumeSubheading
+              {Research Assistant}{June 2020 -- Present}
+              {Texas A\&M University}{College Station, TX}
+              \resumeItemListStart
+                \resumeItem{Developed a REST API using FastAPI and PostgreSQL}
+              \resumeItemListEnd
+          \resumeSubHeadingListEnd
+        \end{document}
+        """#
+        let result = ResumeLaTeXImporter.convert(source)
+        let lines = result.text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        XCTAssertEqual(lines, ["Jake Ryan", "123-456-7890 | jake@su.edu", "Experience", "Research Assistant | June 2020 -- Present", "Texas A&M University | College Station, TX", "Developed a REST API using FastAPI and PostgreSQL"])
+        XCTAssertFalse(result.unsupportedCommands.contains("\\vspace"))
+        XCTAssertEqual(ResumeLaTeXImporter.convert(#"\begin{document}a \textbackslash{} b\end{document}"#).text, #"a \ b"#)
+    }
+
+    func testElementBindingGivesTheFallbackOnceItsItemIsDeleted() {
+        var bullets = [ResumeBullet(text: "First"), ResumeBullet(text: "Second")]
+        let list = Binding(get: { bullets }, set: { bullets = $0 })
+        let second = list.element(bullets[1].id, or: bullets[1])
+        second.wrappedValue.text = "Edited"
+        XCTAssertEqual(bullets.map(\.text), ["First", "Edited"])
+        bullets.removeLast()
+        XCTAssertEqual(second.wrappedValue.text, "Second")
+        second.wrappedValue.text = "Stale write"
+        XCTAssertEqual(bullets.map(\.text), ["First"])
     }
 
     func testLatexImporterUnescapesSupportedSymbolsAndReportsUnknownCommands() {
