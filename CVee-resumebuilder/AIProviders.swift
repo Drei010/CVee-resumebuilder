@@ -28,13 +28,16 @@ struct APIKeyStore {
     private let service = "com.drei010.CVee-resumebuilder.ai-keys"
     private var isUITesting: Bool { ProcessInfo.processInfo.arguments.contains("-ui-testing") }
     private func testKey(_ provider: AIProvider) -> String { "ui-testing.ai-key.\(provider.rawValue)" }
-    func key(for provider: AIProvider) -> String? {
+    /// Asks for device authentication. Throws `keyLocked` when it is cancelled or fails; nil means no key is saved.
+    func key(for provider: AIProvider) throws -> String? {
         if isUITesting { return UserDefaults.standard.string(forKey: testKey(provider)) }
         let context = LAContext()
         context.localizedReason = "Unlock your \(provider.name) API key"
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: provider.rawValue, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne, kSecUseAuthenticationContext as String: context]
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecUserCanceled || status == errSecAuthFailed { throw AIProviderError.keyLocked }
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
     func containsKey(for provider: AIProvider) -> Bool {
@@ -68,7 +71,7 @@ struct AIProviderSelection {
     let keyStore = APIKeyStore()
     func provider() -> AIProvider? {
         if let raw = UserDefaults.standard.string(forKey: "ai.provider"), let value = AIProvider(rawValue: raw) { return value }
-        return FoundationModelsAvailability().state().description == "This device does not support Apple Intelligence generation." ? nil : .apple
+        return FoundationModelsAvailability().isDeviceEligible ? .apple : nil
     }
     func setProvider(_ provider: AIProvider?) { if let provider { UserDefaults.standard.set(provider.rawValue, forKey: "ai.provider") } else { UserDefaults.standard.removeObject(forKey: "ai.provider") } }
     func model(for provider: AIProvider) -> AIModelOption { let id = UserDefaults.standard.string(forKey: "ai.model.\(provider.rawValue)"); return provider.models.first(where: { $0.id == id }) ?? provider.defaultModel }
@@ -78,23 +81,40 @@ struct AIProviderSelection {
 }
 
 enum AIProviderError: LocalizedError {
-    case notConfigured, unavailable(String), authentication, quota, network, provider, decoding, empty, keychain
+    case notConfigured, unavailable(String), authentication, quota, network, provider, decoding, empty, keychain, keyLocked
     var errorDescription: String? {
-        switch self { case .notConfigured: "Choose an AI provider and add its API key in Profile → AI Provider."; case .unavailable(let message): message; case .authentication: "The saved API key was rejected. Replace it in Profile → AI Provider."; case .quota: "This provider has reached its rate or usage limit."; case .network: "The AI provider could not be reached. Check your internet connection."; case .provider: "The selected AI provider returned an error."; case .decoding: "The AI provider returned an unreadable response."; case .empty: "The AI provider returned no text."; case .keychain: "The API key could not be saved securely." }
+        switch self { case .notConfigured: "Choose an AI provider and add its API key in Profile → AI Provider."; case .unavailable(let message): message; case .authentication: "The saved API key was rejected. Replace it in Profile → AI Provider."; case .quota: "This provider has reached its rate or usage limit."; case .network: "The AI provider could not be reached. Check your internet connection."; case .provider: "The selected AI provider returned an error."; case .decoding: "The AI provider returned an unreadable response."; case .empty: "The AI provider returned no text."; case .keychain: "The API key could not be saved securely."; case .keyLocked: "The API key stayed locked. Try again and unlock it when asked." }
     }
 }
 
 struct AITextGenerationService {
     let selection = AIProviderSelection()
+    private var unlockedKey: (provider: AIProvider, value: String)?
+
+    /// A copy that reads the selected provider's key once, for work that sends many requests in a row.
+    func unlocked() throws -> Self {
+        guard let provider = selection.provider(), provider.requiresKey else { return self }
+        var copy = self
+        copy.unlockedKey = (provider, try apiKey(for: provider))
+        return copy
+    }
+
+    /// The unlocked key only for the provider it was read for, so one provider's key never goes to another.
+    private func apiKey(for provider: AIProvider) throws -> String {
+        if let unlockedKey, unlockedKey.provider == provider { return unlockedKey.value }
+        guard let key = try selection.keyStore.key(for: provider) else { throw AIProviderError.notConfigured }
+        return key
+    }
+
     func generate(instructions: String, prompt: String, maxOutputTokens: Int) async throws -> String {
         guard let provider = selection.provider() else { throw AIProviderError.notConfigured }
         if provider == .apple {
             #if canImport(FoundationModels)
-            if #available(iOS 26.0, *) { guard case .available = SystemLanguageModel.default.availability else { throw AIProviderError.unavailable(FoundationModelsAvailability().state().description) }; return try await LanguageModelSession(instructions: instructions).respond(to: prompt).content }
+            if #available(iOS 26.0, *) { guard case .available = SystemLanguageModel.default.availability else { throw AIProviderError.unavailable(FoundationModelsAvailability().state().description) }; let text = try await LanguageModelSession(instructions: instructions).respond(to: prompt).content; guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AIProviderError.empty }; return text }
             #endif
             throw AIProviderError.unavailable(FoundationModelsAvailability().state().description)
         }
-        guard let key = selection.keyStore.key(for: provider) else { throw AIProviderError.notConfigured }
+        let key = try apiKey(for: provider)
         let model = selection.model(for: provider)
         var request: URLRequest
         switch provider {

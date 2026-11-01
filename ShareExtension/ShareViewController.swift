@@ -1,6 +1,9 @@
 import UIKit
 import UniformTypeIdentifiers
 
+/// The app's JobCaptureLimits.maxBytes: one share keeps at most this many attachment bytes.
+private let maxAttachmentBytes = 10_000_000
+
 final class ShareViewController: UIViewController {
     private let titleField = UITextField()
     private let preview = UITextView()
@@ -51,6 +54,12 @@ final class ShareViewController: UIViewController {
             guard let self else { return }
             self.items = self.loadedItems.keys.sorted().compactMap { self.loadedItems[$0] }
             self.preview.text = self.items.map { $0.text ?? $0.url ?? $0.filename }.joined(separator: "\n\n")
+            // Saving again can't fix an oversized share, so say why and turn Save off.
+            if self.items.reduce(0, { $0 + $1.byteCount }) > maxAttachmentBytes {
+                self.status.text = "Attachments must be 10 MB or smaller in total."
+                self.saveButton.isEnabled = false
+                return
+            }
             self.status.text = self.items.contains(where: { !$0.attachments.isEmpty }) ? "Attachment ready. Saved locally before this extension closes." : "Ready to save to the CVee inbox."
         }
     }
@@ -67,12 +76,14 @@ final class ShareViewController: UIViewController {
             return type.conforms(to: .pdf) || type.conforms(to: .image) || type == .data
         })
         guard let type else { completion(nil); return }
-        provider.loadDataRepresentation(forTypeIdentifier: type) { data, _ in
-            guard let data else { completion(nil); return }
+        provider.loadFileRepresentation(forTypeIdentifier: type) { url, _ in
+            // Check the size before reading: a share extension has little memory, and a file over the limit can't be saved anyway.
+            guard let url, let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else { completion(nil); return }
             // CVee recognizes screenshots by their file extension, which a suggested name often leaves out.
             var filename = provider.suggestedName ?? (UTType(type)?.conforms(to: .image) == true ? "Screenshot" : "shared-attachment")
             if (filename as NSString).pathExtension.isEmpty, let fileExtension = UTType(type)?.preferredFilenameExtension { filename += ".\(fileExtension)" }
-            completion(SharedItem(filename: filename, contentType: type, data: data))
+            guard size <= maxAttachmentBytes else { completion(SharedItem(filename: filename, contentType: type, data: nil, byteCount: size)); return }
+            completion((try? Data(contentsOf: url)).map { SharedItem(filename: filename, contentType: type, data: $0, byteCount: size) })
         }
     }
 
@@ -95,10 +106,11 @@ private struct SharedItem {
     var filename: String = ""
     var contentType: String = ""
     var data: Data?
+    var byteCount = 0
     var attachments: [SharedItem] { data == nil ? [] : [self] }
     init(text: String) { self.text = text; url = nil; data = nil }
     init(url: String) { text = nil; self.url = url; data = nil }
-    init(filename: String, contentType: String, data: Data) { text = nil; url = nil; self.filename = filename; self.contentType = contentType; self.data = data }
+    init(filename: String, contentType: String, data: Data?, byteCount: Int) { text = nil; url = nil; self.filename = filename; self.contentType = contentType; self.data = data; self.byteCount = byteCount }
 }
 
 private struct ShareInboxWriter {
@@ -121,7 +133,7 @@ private struct ShareInboxWriter {
         for item in items.flatMap(\.attachments) {
             guard let data = item.data else { throw CocoaError(.fileNoSuchFile) }
             attachmentBytes += data.count
-            guard attachmentBytes <= 10_000_000 else { throw CocoaError(.fileWriteOutOfSpace) }
+            guard attachmentBytes <= maxAttachmentBytes else { throw CocoaError(.fileWriteOutOfSpace) }
             var filename = item.filename.replacingOccurrences(of: "/", with: "-")
             // Several screenshots can share a name; number the repeats so none overwrites another.
             if usedNames.contains(filename.lowercased()) {

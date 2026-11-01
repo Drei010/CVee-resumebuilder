@@ -50,7 +50,7 @@ When a fact changes, update the file that owns it and link to it elsewhere inste
 - Route generation, task import splitting, and task enhancement through `AITextGenerationService` so the user's provider choice holds. Keep the Foundation Models availability guards for Apple, keep remote providers as explicit choices with no automatic fallback, and keep API keys in the Keychain through `APIKeyStore` (its UserDefaults path is only for `-ui-testing`). The privacy and provider-choice principle is in [PRODUCT.md](PRODUCT.md).
 - Generated and suggested content follows the facts-only rule in [PRODUCT.md](PRODUCT.md).
 - Follow [PromptSpec.md](PromptSpec.md) when changing generation prompts or resume rendering, and update the matching prompt text there in the same change so it matches the code.
-- Describe features in [README.md](README.md) only as the code implements them. Some code is present but unused, for example `LinkedInJobFetcher.fetch` and the `Resume.template` value (always `"jakes"`).
+- Describe features in [README.md](README.md) only as the code implements them. Some code is present but unused, for example the `Resume.template` value (always `"jakes"`).
 
 ## Verification
 
