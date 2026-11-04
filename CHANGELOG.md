@@ -2,6 +2,15 @@
 
 Dated history of shipped changes, newest first. Dated entries come from the git history (commit dates, pull request numbers from merge commits, and short commit hashes where one day holds several commits) and from the dated reports in [design-audit/](design-audit/README.md). What CVee does today is in [README.md](README.md); planned work is in [ROADMAP.md](ROADMAP.md).
 
+## 2026-11-04
+
+### Parallel CI, fewer config files, and a smaller archive
+
+- CI runs the UI tests in parallel. The 41 UI tests, which ran one after another in a single class, are split into eight classes by area that share `CVeeUITestCase` (`UITestSupport.swift`). Four macOS jobs (iPhone and iPad, two shards each) run them at once, each on two simulator clones. `scripts/test-ios.sh` takes `IOS_TEST_SHARD` and `IOS_PARALLEL_WORKERS` and says "Building tests" and "Running tests". SwiftLint runs in its own Linux job with the pinned 0.65.1 image instead of an unpinned Homebrew install. Changes that touch only Markdown, `design-audit/`, or `.claude/` skip CI, a new push to a pull request cancels its older run, and test artifacts are kept for 14 days.
+- Removed `.mcp.json` (the Canva MCP server), `.impeccable/design.json` with PRODUCT.md's `impeccable` marker, and one user's Xcode scheme state. `xcuserdata/` is now ignored.
+- `design-audit/` drops the two screen recordings (22.7 MB) and the raw test-run files no document linked to, and their manifests list only the screenshots that remain. Every PNG in the repository is recompressed losslessly, with its pixels checked unchanged. `LaunchImage.png` is now 600 px, the 3× size of its 200-point slot on the launch screen. The PNGs shrink from 48.5 MB to 30.3 MB, and all tracked files from 75.2 MB to 32.9 MB. Git history is unchanged, so a clone is still about 66 MB.
+- README.md says the Saved Jobs mascot stays in place while searching, as the code does. `design-audit/README.md` lists `2026-10-13-round-three/` and the iPhone test summary, ROADMAP.md cites the deleted Canva spec by commit, and this changelog gains its missing 2026-10-14 entry.
+
 ## 2026-11-01
 
 ### Audit fixes
@@ -101,6 +110,17 @@ Captures: [design-audit/2026-10-18-wizard-round-one/](design-audit/2026-10-18-wi
 - Experience and Target Job use the Saved Jobs search card below the step header instead of the navigation bar search field. Experience filters by company; Target Job filters by company and status. Select all and Clear selection are removed, the selected count stays, and task rows use square checkboxes while job rows keep the single-choice circle.
 - Job details no longer repeats a "Job details" header under its title.
 - The wizard UI tests select tasks by tapping rows, use the chevron for Back, and discard from the Resume step.
+
+## 2026-10-14
+
+### Tasks and Saved Jobs, round three
+
+Captures: [design-audit/2026-10-13-round-three/](design-audit/2026-10-13-round-three/) (five iPhone screens).
+
+- Import tasks moved from its own row on Tasks into the Task actions menu, below Add manually.
+- Saved Jobs uses the Tasks search card. Its filter menu has Company and Status sections (Ready for resume, Needs review, Needs description), each active filter shows as a removable chip, and a search with no results offers Clear search and filters.
+- The Saved Jobs mascot and speech bubble sit above the search card and stay visible while searching.
+- New UI tests open Import tasks from the Task actions menu and filter Saved Jobs by company and status.
 
 ## 2026-10-09
 
