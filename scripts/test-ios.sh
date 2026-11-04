@@ -42,10 +42,23 @@ fi
 
 mkdir -p "$DIAGNOSTICS_DIR"
 DESTINATIONS_FILE="$DIAGNOSTICS_DIR/destinations-${DEVICE_FAMILY}.txt"
-if ! xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations >"$DESTINATIONS_FILE" 2>&1; then
-  cat "$DESTINATIONS_FILE" >&2
-  exit 70
-fi
+# On a fresh CI runner, CoreSimulator finds its simulator runtimes only once something asks for
+# them, and until then xcodebuild lists just placeholder destinations. Ask simctl first, then give
+# xcodebuild up to six tries, 15 seconds apart, to list a simulator of the requested family.
+xcrun simctl list runtimes >"$DIAGNOSTICS_DIR/runtimes-${DEVICE_FAMILY}.txt" 2>&1 || true
+for attempt in 1 2 3 4 5 6; do
+  if ! xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations >"$DESTINATIONS_FILE" 2>&1; then
+    cat "$DESTINATIONS_FILE" >&2
+    exit 70
+  fi
+  if [[ -n "${IOS_SIMULATOR_DESTINATION:-}" ]] || grep -q "platform:iOS Simulator.*name:$DEVICE_FAMILY" "$DESTINATIONS_FILE"; then
+    break
+  fi
+  if (( attempt < 6 )); then
+    echo "No $DEVICE_FAMILY Simulator is listed yet (try $attempt of 6); waiting for CoreSimulator." >&2
+    sleep 15
+  fi
+done
 
 DESTINATION="${IOS_SIMULATOR_DESTINATION:-$(awk -v family="$DEVICE_FAMILY" '
   $0 ~ "platform:iOS Simulator" && $0 ~ "name:" family {
@@ -59,6 +72,9 @@ DESTINATION="${IOS_SIMULATOR_DESTINATION:-$(awk -v family="$DEVICE_FAMILY" '
 if [[ -z "$DESTINATION" ]]; then
   echo "No compatible $DEVICE_FAMILY Simulator destination found." >&2
   cat "$DESTINATIONS_FILE" >&2
+  # Show what CoreSimulator has, so the log tells a missing runtime from a missing device.
+  xcrun simctl list runtimes >&2 || true
+  xcrun simctl list devices available >&2 || true
   exit 1
 fi
 
