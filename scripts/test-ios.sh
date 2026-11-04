@@ -4,8 +4,41 @@ set -euo pipefail
 PROJECT="CVee-resumebuilder.xcodeproj"
 SCHEME="CVee-resumebuilder"
 DEVICE_FAMILY="${IOS_DEVICE_FAMILY:-iPhone}"
+SHARD="${IOS_TEST_SHARD:-}"
+WORKERS="${IOS_PARALLEL_WORKERS:-1}"
 DIAGNOSTICS_DIR="${CI_DIAGNOSTICS_DIR:-$PWD/ci-diagnostics}"
-RESULT_BUNDLE="$PWD/TestResults-${DEVICE_FAMILY}.xcresult"
+RESULT_BUNDLE="$PWD/TestResults-${DEVICE_FAMILY}${SHARD:+-shard$SHARD}.xcresult"
+
+# Shard 1 runs these UI test classes. Shard 2 runs everything else, unit tests included,
+# so a new test class always runs somewhere.
+SHARD_ONE_CLASSES=(TaskCaptureUITests TaskLibraryUITests TaskAIUITests SavedJobsUITests ProfileUITests)
+
+TEST_SELECTION=(-only-testing:CVee-resumebuilderUITests -only-testing:CVee-resumebuilderTests)
+case "$SHARD" in
+  "") ;;
+  1)
+    TEST_SELECTION=()
+    for class in "${SHARD_ONE_CLASSES[@]}"; do TEST_SELECTION+=("-only-testing:CVee-resumebuilderUITests/$class"); done
+    ;;
+  2)
+    for class in "${SHARD_ONE_CLASSES[@]}"; do TEST_SELECTION+=("-skip-testing:CVee-resumebuilderUITests/$class"); done
+    ;;
+  *)
+    echo "IOS_TEST_SHARD must be 1, 2, or unset (all tests)." >&2
+    exit 2
+    ;;
+esac
+
+if [[ ! "$WORKERS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "IOS_PARALLEL_WORKERS must be a positive whole number." >&2
+  exit 2
+fi
+if (( WORKERS > 1 )); then
+  # xcodebuild runs test classes side by side on clones of the destination simulator.
+  PARALLEL_ARGS=(-parallel-testing-enabled YES -parallel-testing-worker-count "$WORKERS")
+else
+  PARALLEL_ARGS=(-parallel-testing-enabled NO)
+fi
 
 mkdir -p "$DIAGNOSTICS_DIR"
 DESTINATIONS_FILE="$DIAGNOSTICS_DIR/destinations-${DEVICE_FAMILY}.txt"
@@ -29,8 +62,10 @@ if [[ -z "$DESTINATION" ]]; then
   exit 1
 fi
 
+# A serial run uses the simulator itself, so boot it first. A parallel run uses clones that
+# xcodebuild boots, so the original stays shut down and leaves its memory to them.
 SIMULATOR_ID="${DESTINATION##*id=}"
-if [[ "$SIMULATOR_ID" != "$DESTINATION" ]]; then
+if [[ "$SIMULATOR_ID" != "$DESTINATION" ]] && (( WORKERS == 1 )); then
   xcrun simctl boot "$SIMULATOR_ID" 2>/dev/null || true
   xcrun simctl bootstatus "$SIMULATOR_ID" -b
 fi
@@ -41,18 +76,17 @@ COMMON_ARGS=(
   -destination "$DESTINATION"
   -destination-timeout 120
   -derivedDataPath "$PWD/.derivedData"
-  -only-testing:CVee-resumebuilderUITests
-  -only-testing:CVee-resumebuilderTests
-  -parallel-testing-enabled NO
   CODE_SIGNING_ALLOWED=NO
 )
 
-echo "Building UI tests for $DESTINATION"
+echo "Building tests for $DESTINATION"
 xcodebuild "${COMMON_ARGS[@]}" build-for-testing 2>&1 | tee "$DIAGNOSTICS_DIR/build.log"
 
-echo "Running UI tests for $DESTINATION"
+echo "Running tests for $DESTINATION (shard: ${SHARD:-all}, workers: $WORKERS)"
 rm -rf "$RESULT_BUNDLE"
 xcodebuild "${COMMON_ARGS[@]}" \
+  "${TEST_SELECTION[@]}" \
+  "${PARALLEL_ARGS[@]}" \
   -resultBundlePath "$RESULT_BUNDLE" \
   -enableCodeCoverage YES \
   test-without-building 2>&1 | tee "$DIAGNOSTICS_DIR/test.log"
