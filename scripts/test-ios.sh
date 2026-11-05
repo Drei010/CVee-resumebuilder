@@ -11,7 +11,7 @@ RESULT_BUNDLE="$PWD/TestResults-${DEVICE_FAMILY}${SHARD:+-shard$SHARD}.xcresult"
 
 # Shard 1 runs these UI test classes. Shard 2 runs everything else, unit tests included,
 # so a new test class always runs somewhere.
-SHARD_ONE_CLASSES=(TaskCaptureUITests TaskLibraryUITests TaskAIUITests SavedJobsUITests ProfileUITests)
+SHARD_ONE_CLASSES=(TaskCaptureUITests TaskLibraryUITests TaskAIUITests SavedJobsUITests)
 
 TEST_SELECTION=(-only-testing:CVee-resumebuilderUITests -only-testing:CVee-resumebuilderTests)
 case "$SHARD" in
@@ -100,13 +100,31 @@ xcodebuild "${COMMON_ARGS[@]}" build-for-testing 2>&1 | tee "$DIAGNOSTICS_DIR/bu
 
 echo "Running tests for $DESTINATION (shard: ${SHARD:-all}, workers: $WORKERS)"
 rm -rf "$RESULT_BUNDLE"
+# Keep going when tests fail, so the summary is still written and the log ends with each
+# failure's message: in CI, the log is often the only place a failure can be read.
+set +e
 xcodebuild "${COMMON_ARGS[@]}" \
   "${TEST_SELECTION[@]}" \
   "${PARALLEL_ARGS[@]}" \
   -resultBundlePath "$RESULT_BUNDLE" \
   -enableCodeCoverage YES \
   test-without-building 2>&1 | tee "$DIAGNOSTICS_DIR/test.log"
+TEST_STATUS=${PIPESTATUS[0]}
+set -e
 
 if [[ -d "$RESULT_BUNDLE" ]]; then
   xcrun xcresulttool get test-results summary --path "$RESULT_BUNDLE" > "$DIAGNOSTICS_DIR/test-summary.json" || true
+  python3 -I - "$DIAGNOSTICS_DIR/test-summary.json" <<'PY' || true
+import json
+import sys
+
+try:
+    summary = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    sys.exit(0)
+for failure in summary.get("testFailures", []):
+    name = failure.get("testIdentifierString") or failure.get("testName") or "unknown test"
+    print(f"Failure in {name}: {failure.get('failureText', '').strip()}")
+PY
 fi
+exit "$TEST_STATUS"
