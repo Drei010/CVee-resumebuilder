@@ -114,17 +114,55 @@ set -e
 
 if [[ -d "$RESULT_BUNDLE" ]]; then
   xcrun xcresulttool get test-results summary --path "$RESULT_BUNDLE" > "$DIAGNOSTICS_DIR/test-summary.json" || true
-  python3 -I - "$DIAGNOSTICS_DIR/test-summary.json" <<'PY' || true
+  xcrun xcresulttool get test-results tests --path "$RESULT_BUNDLE" > "$DIAGNOSTICS_DIR/test-results.json" || true
+  # Print each test class's time, to keep the CI shards balanced, then each failed assertion with
+  # its file and line. Without the test tree, fall back to the summary's failure text.
+  python3 -I - "$DIAGNOSTICS_DIR/test-results.json" "$DIAGNOSTICS_DIR/test-summary.json" <<'PY' || true
 import json
 import sys
 
-try:
-    summary = json.load(open(sys.argv[1]))
-except (OSError, ValueError):
-    sys.exit(0)
-for failure in summary.get("testFailures", []):
-    name = failure.get("testIdentifierString") or failure.get("testName") or "unknown test"
-    print(f"Failure in {name}: {failure.get('failureText', '').strip()}")
+
+def load(path):
+    try:
+        with open(path) as file:
+            return json.load(file)
+    except (OSError, ValueError):
+        return {}
+
+
+def test_cases(nodes, suite=None):
+    for node in nodes:
+        if node.get("nodeType") == "Test Case":
+            yield suite, node
+        else:
+            inner = node.get("name") if node.get("nodeType") == "Test Suite" else suite
+            yield from test_cases(node.get("children", []), inner)
+
+
+def failure_messages(node):
+    for child in node.get("children", []):
+        if child.get("nodeType") == "Failure Message":
+            yield child.get("name", "")
+        yield from failure_messages(child)
+
+
+classes = {}
+failures = []
+for suite, case in test_cases(load(sys.argv[1]).get("testNodes", [])):
+    count, seconds = classes.get(suite, (0, 0.0))
+    classes[suite] = (count + 1, seconds + float(case.get("durationInSeconds") or 0))
+    if case.get("result") == "Failed":
+        messages = "; ".join(failure_messages(case)) or "no failure message"
+        failures.append(f"Failure in {suite}/{case.get('name')}: {messages}")
+for suite, (count, seconds) in sorted(classes.items(), key=lambda item: str(item[0])):
+    if seconds:
+        print(f"{suite}: {count} tests, {seconds:.0f} s")
+if not failures:
+    for failure in load(sys.argv[2]).get("testFailures", []):
+        name = failure.get("testIdentifierString") or failure.get("testName") or "unknown test"
+        failures.append(f"Failure in {name}: {failure.get('failureText', '').strip()}")
+if failures:
+    print("\n".join(failures))
 PY
 fi
 exit "$TEST_STATUS"
