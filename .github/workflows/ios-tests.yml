@@ -40,11 +40,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Run shard ${{ matrix.shard }} on 2 parallel simulators
+      # Each shard runs one test at a time. Simulator clones (IOS_PARALLEL_WORKERS) made every UI
+      # test about 3x slower on these 3-CPU runners, so the parallelism comes from the four jobs.
+      - name: Run shard ${{ matrix.shard }}
         env:
           IOS_DEVICE_FAMILY: ${{ matrix.device-family }}
           IOS_TEST_SHARD: ${{ matrix.shard }}
-          IOS_PARALLEL_WORKERS: 2
           CI_DIAGNOSTICS_DIR: ci-diagnostics/${{ matrix.device-family }}-shard${{ matrix.shard }}
         run: ./scripts/test-ios.sh
 
