@@ -4,37 +4,49 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    paths-ignore: ["**/*.md", "design-audit/**", ".claude/**"]
   pull_request:
     branches: [main]
+    paths-ignore: ["**/*.md", "design-audit/**", ".claude/**"]
+
+# A new push to a pull request cancels its older run; runs on main and tags always finish.
+concurrency:
+  group: ios-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The same SwiftLint version that .claude/hooks/session-start.sh pins for cloud sessions.
+    container: ghcr.io/realm/swiftlint:0.65.1
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Run SwiftLint
+        run: swiftlint lint --config .swiftlint.yml --strict
+
   test:
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         device-family: [iPhone, iPad]
+        shard: [1, 2]
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Show Xcode and Simulator runtimes
-        run: |
-          xcodebuild -version
-          xcrun simctl list runtimes
-
-      - name: Install SwiftLint
-        run: brew install swiftlint
-
-      - name: Run SwiftLint
-        run: swiftlint lint --config .swiftlint.yml --strict
-
-      - name: Run XCUITest suite
+      # Each shard runs one test at a time. Simulator clones (IOS_PARALLEL_WORKERS) made every UI
+      # test about 3x slower on these 3-CPU runners, so the parallelism comes from the four jobs.
+      - name: Run shard ${{ matrix.shard }}
         env:
           IOS_DEVICE_FAMILY: ${{ matrix.device-family }}
-          CI_DIAGNOSTICS_DIR: ci-diagnostics/${{ matrix.device-family }}
+          IOS_TEST_SHARD: ${{ matrix.shard }}
+          CI_DIAGNOSTICS_DIR: ci-diagnostics/${{ matrix.device-family }}-shard${{ matrix.shard }}
         run: ./scripts/test-ios.sh
 
       - name: Collect iOS test diagnostics
@@ -42,22 +54,17 @@ jobs:
         run: |
           mkdir -p ci-diagnostics
           xcodebuild -version > ci-diagnostics/xcode-version.txt
-          xcodebuild -project CVee-resumebuilder.xcodeproj -scheme CVee-resumebuilder -showdestinations > ci-diagnostics/destinations.txt || true
           xcrun simctl list devices > ci-diagnostics/simulators.txt || true
           xcrun simctl list runtimes > ci-diagnostics/runtimes.txt || true
-          for result in TestResults-*.xcresult; do
-            if [ -d "$result" ]; then
-              xcrun xcresulttool get test-results summary --path "$result" > "ci-diagnostics/${result%.xcresult}-summary.json" || true
-            fi
-          done
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ios-test-results-${{ matrix.device-family }}
+          name: ios-test-results-${{ matrix.device-family }}-shard${{ matrix.shard }}
           path: |
             TestResults-*.xcresult
             ci-diagnostics
             .derivedData/Logs/Test
           if-no-files-found: warn
+          retention-days: 14
