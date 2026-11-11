@@ -1,0 +1,7 @@
+# Archived design audits and screenshots: evidence, not current specs (see AGENTS.md).
+# Excluding them avoids one vision pass per screenshot (144 images).
+design-audit/
+# App icon and color assets: no structure worth graphing.
+**/Assets.xcassets/
+# The graph's own output.
+graphify-out/
