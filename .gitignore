@@ -6,3 +6,4 @@ ci-diagnostics/
 build/
 xcuserdata/
 .playwright-cli/
+graphify-out/
